@@ -14,7 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      founders: {
+        Row: {
+          accelerator: string | null
+          axes: Json
+          claims: Json
+          company: string
+          created_at: string
+          founder_score: Json
+          gaps: Json
+          geo: string
+          id: string
+          momentum: Json
+          name: string
+          one_liner: string
+          prior_vc: boolean
+          sector: string
+          signals: Json
+          sort_order: number
+          stage: string
+          tags: Json
+          track: string
+        }
+        Insert: {
+          accelerator?: string | null
+          axes: Json
+          claims?: Json
+          company: string
+          created_at?: string
+          founder_score: Json
+          gaps?: Json
+          geo: string
+          id: string
+          momentum?: Json
+          name: string
+          one_liner: string
+          prior_vc?: boolean
+          sector: string
+          signals?: Json
+          sort_order?: number
+          stage: string
+          tags?: Json
+          track: string
+        }
+        Update: {
+          accelerator?: string | null
+          axes?: Json
+          claims?: Json
+          company?: string
+          created_at?: string
+          founder_score?: Json
+          gaps?: Json
+          geo?: string
+          id?: string
+          momentum?: Json
+          name?: string
+          one_liner?: string
+          prior_vc?: boolean
+          sector?: string
+          signals?: Json
+          sort_order?: number
+          stage?: string
+          tags?: Json
+          track?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
