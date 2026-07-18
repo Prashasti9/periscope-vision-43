@@ -1,0 +1,1384 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { supabase } from "@/integrations/supabase/client";
+import { askAI } from "@/lib/periscope-ai.functions";
+
+export const Route = createFileRoute("/")({
+  component: Periscope,
+});
+
+/* ============================================================
+   PERISCOPE — The VC brain that sees founders before they surface
+   Design tokens: dossier-meets-terminal.
+   ============================================================ */
+
+const C = {
+  ink: "#0F2230",
+  inkSoft: "#3D5566",
+  paper: "#F4F6F5",
+  card: "#FFFFFF",
+  line: "#DDE4E2",
+  sea: "#0E7C66",
+  seaSoft: "#E3F2EE",
+  amber: "#B26A0E",
+  amberSoft: "#F8EEDD",
+  flag: "#B3382C",
+  flagSoft: "#F9E8E5",
+  cool: "#33628C",
+  coolSoft: "#E7EEF5",
+  mono: "'IBM Plex Mono', ui-monospace, monospace",
+  body: "'IBM Plex Sans', system-ui, sans-serif",
+  disp: "'Fraunces', Georgia, serif",
+};
+
+/* -------- Types (mirror Supabase row shape) -------- */
+type Axis = {
+  score: number | null;
+  rating?: string;
+  trend: string | null;
+  note: string;
+};
+type Founder = {
+  id: string;
+  name: string;
+  company: string;
+  oneLiner: string;
+  track: "inbound" | "outbound";
+  stage: string;
+  geo: string;
+  sector: string;
+  accelerator: string | null;
+  priorVC: boolean;
+  tags: string[];
+  founderScore: {
+    value: number;
+    low: number;
+    high: number;
+    trend: string;
+    coldStart: boolean;
+    history?: string;
+  };
+  axes: { founder: Axis; market: Axis; ideaVsMarket: Axis };
+  signals: { id: string; src: string; ts: string; text: string; conf: number }[];
+  claims: { claim: string; trust: number; evidence: string; flag: string | null }[];
+  gaps: string[];
+  momentum: number[];
+};
+
+const DEFAULT_THESIS = {
+  sectors: ["AI infra", "Applied AI"],
+  stages: ["Pre-seed", "Seed"],
+  geos: "Global",
+  check: 100,
+  ownership: 7,
+  risk: "High — pre-track-record OK",
+};
+
+function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
+  let fit = 0;
+  const why: string[] = [];
+  if (thesis.sectors.includes(f.sector)) {
+    fit += 40;
+    why.push(`sector ∈ thesis (${f.sector})`);
+  } else why.push(`sector outside thesis (${f.sector})`);
+  if (thesis.stages.includes(f.stage)) {
+    fit += 30;
+    why.push(`stage ∈ thesis (${f.stage})`);
+  }
+  const risky = f.founderScore.coldStart;
+  if (risky && thesis.risk.startsWith("High")) {
+    fit += 15;
+    why.push("cold-start allowed by risk appetite");
+  } else if (risky) {
+    why.push("cold-start penalized by risk appetite");
+  } else fit += 10;
+  fit += Math.round((f.founderScore.value / 1000) * 15);
+  return { fit, why };
+}
+
+/* -------- Primitives -------- */
+function Chip({
+  tone = "cool",
+  children,
+}: {
+  tone?: "sea" | "amber" | "flag" | "cool" | "ink";
+  children: React.ReactNode;
+}) {
+  const map: Record<string, [string, string]> = {
+    sea: [C.seaSoft, C.sea],
+    amber: [C.amberSoft, C.amber],
+    flag: [C.flagSoft, C.flag],
+    cool: [C.coolSoft, C.cool],
+    ink: ["#E9EDEC", C.inkSoft],
+  };
+  const [bg, fg] = map[tone];
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 999,
+        background: bg,
+        color: fg,
+        fontFamily: C.mono,
+        fontSize: 10,
+        fontWeight: 500,
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+        marginRight: 4,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function TrustDot({ v }: { v: number }) {
+  const tone = v >= 0.75 ? C.sea : v >= 0.5 ? C.amber : C.flag;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontFamily: C.mono,
+        fontSize: 11,
+        color: tone,
+        fontWeight: 500,
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+          background: tone,
+          display: "inline-block",
+        }}
+      />
+      {Math.round(v * 100)}%
+    </span>
+  );
+}
+
+function Trend({ t }: { t: string | null | undefined }) {
+  if (!t) return null;
+  const arrow = t === "improving" ? "▲" : t === "declining" ? "▼" : "▶";
+  const color = t === "improving" ? C.sea : t === "declining" ? C.flag : C.inkSoft;
+  return (
+    <span style={{ fontFamily: C.mono, fontSize: 10, color, marginLeft: 6 }}>
+      {arrow} {t}
+    </span>
+  );
+}
+
+function Spark({ data, w = 120, h = 30 }: { data: number[]; w?: number; h?: number }) {
+  if (!data.length) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const pts = data
+    .map(
+      (v, i) =>
+        `${(i / (data.length - 1)) * w},${
+          h - ((v - min) / (max - min || 1)) * (h - 4) - 2
+        }`,
+    )
+    .join(" ");
+  const up = data[data.length - 1] >= data[0];
+  return (
+    <svg width={w} height={h} style={{ display: "block" }}>
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={up ? C.sea : C.flag}
+        strokeWidth={1.5}
+      />
+    </svg>
+  );
+}
+
+function ScoreBand({ fs }: { fs: Founder["founderScore"] }) {
+  const pct = (v: number) => `${(v / 1000) * 100}%`;
+  return (
+    <div style={{ fontFamily: C.body }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ fontFamily: C.disp, fontSize: 34, color: C.ink, fontWeight: 600 }}>
+          {fs.value}
+        </span>
+        <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+          [{fs.low}–{fs.high}] / 1000
+        </span>
+        <Trend t={fs.trend} />
+        {fs.coldStart && (
+          <span style={{ marginLeft: 4 }}>
+            <Chip tone="amber">cold-start · wide interval by design</Chip>
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          position: "relative",
+          marginTop: 10,
+          height: 8,
+          background: "#EDF1F0",
+          borderRadius: 4,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: pct(fs.low),
+            width: `calc(${pct(fs.high)} - ${pct(fs.low)})`,
+            top: 0,
+            bottom: 0,
+            background: C.seaSoft,
+            borderLeft: `2px solid ${C.sea}`,
+            borderRight: `2px solid ${C.sea}`,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            left: pct(fs.value),
+            top: -2,
+            bottom: -2,
+            width: 2,
+            background: C.ink,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          fontFamily: C.mono,
+          fontSize: 10,
+          color: C.inkSoft,
+          fontStyle: "italic",
+        }}
+      >
+        A score is an interval, not a number. The band is what we honestly know.
+      </div>
+    </div>
+  );
+}
+
+function Evidence({ s }: { s: Founder["signals"][number] }) {
+  return (
+    <div
+      style={{
+        borderLeft: `2px solid ${C.line}`,
+        padding: "6px 12px",
+        marginBottom: 6,
+        fontFamily: C.body,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: C.mono,
+          fontSize: 10,
+          color: C.inkSoft,
+        }}
+      >
+        <span style={{ color: C.ink, fontWeight: 500 }}>{s.id}</span>
+        <Chip tone="ink">{s.src}</Chip>
+        <span>{s.ts}</span>
+        <span style={{ marginLeft: "auto" }}>
+          <TrustDot v={s.conf} />
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: C.ink, marginTop: 3 }}>{s.text}</div>
+    </div>
+  );
+}
+
+/* -------- Row → Founder mapping -------- */
+function rowToFounder(r: any): Founder {
+  return {
+    id: r.id,
+    name: r.name,
+    company: r.company,
+    oneLiner: r.one_liner,
+    track: r.track,
+    stage: r.stage,
+    geo: r.geo,
+    sector: r.sector,
+    accelerator: r.accelerator,
+    priorVC: r.prior_vc,
+    tags: r.tags ?? [],
+    founderScore: r.founder_score,
+    axes: r.axes,
+    signals: r.signals ?? [],
+    claims: r.claims ?? [],
+    gaps: r.gaps ?? [],
+    momentum: r.momentum ?? [],
+  };
+}
+
+/* -------- Main app -------- */
+function Periscope() {
+  const [founders, setFounders] = useState<Founder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("pipeline");
+  const [thesis, setThesis] = useState(DEFAULT_THESIS);
+  const [selected, setSelected] = useState<Founder | null>(null);
+  const [query, setQuery] = useState("");
+  const [queryResult, setQueryResult] = useState<
+    | null
+    | { error?: string; interpretation?: string; matches: { id: string; reason: string }[] }
+  >(null);
+  const [queryBusy, setQueryBusy] = useState(false);
+  const [memo, setMemo] = useState<{ founder: Founder; text: string } | null>(null);
+  const [memoBusy, setMemoBusy] = useState(false);
+  const [outreach, setOutreach] = useState<{ founder: Founder; text: string } | null>(null);
+  const [outreachBusy, setOutreachBusy] = useState(false);
+
+  const ai = useServerFn(askAI);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("founders" as any)
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error(error);
+        setLoading(false);
+        return;
+      }
+      const list = (data ?? []).map(rowToFounder);
+      setFounders(list);
+      if (list[1]) setSelected(list[1]);
+      else if (list[0]) setSelected(list[0]);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const ranked = useMemo(
+    () =>
+      founders
+        .map((f) => ({ f, ...thesisFit(f, thesis) }))
+        .sort((a, b) => b.fit - a.fit),
+    [founders, thesis],
+  );
+
+  const runQuery = useCallback(async () => {
+    if (!query.trim()) return;
+    setQueryBusy(true);
+    setQueryResult(null);
+    const compact = founders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      company: f.company,
+      sector: f.sector,
+      geo: f.geo,
+      stage: f.stage,
+      accelerator: f.accelerator,
+      priorVC: f.priorVC,
+      tags: f.tags,
+      oneLiner: f.oneLiner,
+      founderScore: f.founderScore.value,
+      axes: {
+        founder: f.axes.founder.score,
+        market: f.axes.market.score,
+        ideaVsMarket: f.axes.ideaVsMarket.score,
+      },
+    }));
+    try {
+      const raw = await ai({
+        data: {
+          prompt: `Database: ${JSON.stringify(compact)}\n\nInvestor query: "${query}"\n\nReturn ONLY JSON, no prose, no backticks: {"matches":[{"id":"...","reason":"one sentence citing the specific attributes that matched"}],"interpretation":"one sentence restating the query as structured criteria"}`,
+          system:
+            "You are the multi-attribute reasoning layer of a VC sourcing system. Resolve compound natural-language queries against founder records in one pass. Be strict: only include genuine matches.",
+        },
+      });
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      setQueryResult(parsed);
+    } catch {
+      setQueryResult({
+        error: "Query engine unreachable — check connection and retry.",
+        matches: [],
+      });
+    }
+    setQueryBusy(false);
+  }, [query, founders, ai]);
+
+  const genMemo = useCallback(
+    async (f: Founder) => {
+      setMemoBusy(true);
+      setMemo(null);
+      setView("memo");
+      const record = JSON.stringify({ ...f, momentum: undefined });
+      try {
+        const text = await ai({
+          data: {
+            prompt: `Founder record (all evidence, trust scores, flags, and gaps included): ${record}\n\nWrite the investment memo now. Recommendation must be explicit: INVEST $100K / PASS / INVESTIGATE (with the single blocking question).`,
+            system:
+              'You write evidence-backed investment memos for $100K/24-hour decisions. Required sections, in order, using these exact headings: COMPANY SNAPSHOT, INVESTMENT HYPOTHESES, SWOT, PROBLEM & PRODUCT, TRACTION & KPIS, RECOMMENDATION. Rules: every factual claim must reference its evidence ID (e.g. [S-402]) and trust level; any data gap must be flagged verbatim (e.g. "Cap table: not disclosed") — never invented; contradictions must appear in SWOT weaknesses and the recommendation; be as brief as clarity allows — padding counts against you. Plain text, no markdown symbols.',
+          },
+        });
+        setMemo({ founder: f, text });
+      } catch {
+        setMemo({
+          founder: f,
+          text: "Memo engine unreachable — check connection and retry. All underlying evidence remains available in the dossier tab.",
+        });
+      }
+      setMemoBusy(false);
+    },
+    [ai],
+  );
+
+  const activate = useCallback(
+    async (f: Founder) => {
+      setOutreachBusy(true);
+      setOutreach(null);
+      try {
+        const text = await ai({
+          data: {
+            prompt: `Founder: ${f.name}, signals: ${JSON.stringify(f.signals)}. Draft a 90-word cold outreach email from an investor. Reference the SPECIFIC public work (repo, paper) that triggered this. Goal: get them to submit an application (deck + company name). Tone: peer-to-peer, zero flattery-spam. Plain text.`,
+            system:
+              "You write outreach that converts builders into applicants. Cold outreach, not cold investment.",
+          },
+        });
+        setOutreach({ founder: f, text });
+      } catch {
+        setOutreach({ founder: f, text: "Draft engine unreachable — retry." });
+      }
+      setOutreachBusy(false);
+    },
+    [ai],
+  );
+
+  const NavBtn = ({ id, label }: { id: string; label: string }) => (
+    <button
+      onClick={() => setView(id)}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "9px 14px",
+        border: "none",
+        cursor: "pointer",
+        background: view === id ? C.card : "transparent",
+        color: view === id ? C.ink : "#B9C9C4",
+        fontFamily: C.body,
+        fontSize: 13,
+        fontWeight: view === id ? 600 : 400,
+        borderRadius: 8,
+        marginBottom: 2,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: C.paper,
+        color: C.ink,
+        fontFamily: C.body,
+      }}
+    >
+      <style>{`*{box-sizing:border-box} button:focus-visible{outline:2px solid ${C.sea};outline-offset:2px}`}</style>
+
+      {/* Top bar */}
+      <div
+        style={{
+          background: C.ink,
+          color: "#fff",
+          padding: "14px 24px",
+          display: "flex",
+          alignItems: "center",
+          gap: 24,
+        }}
+      >
+        <div>
+          <div style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600, lineHeight: 1 }}>
+            Periscope
+          </div>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: "#8FAFA4",
+              letterSpacing: 0.5,
+              marginTop: 2,
+              textTransform: "uppercase",
+            }}
+          >
+            the VC brain · sees founders before they surface
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flex: 1, alignItems: "center" }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runQuery()}
+            placeholder={
+              'Ask anything — "technical founder, Berlin, AI infra, enterprise traction, no prior VC, top-tier accelerator"'
+            }
+            style={{
+              flex: 1,
+              padding: "10px 14px",
+              borderRadius: 8,
+              border: "none",
+              fontFamily: C.mono,
+              fontSize: 12,
+              background: "#1C3444",
+              color: "#fff",
+            }}
+          />
+          <button
+            onClick={runQuery}
+            disabled={queryBusy}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: C.sea,
+              color: "#fff",
+              fontFamily: C.body,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {queryBusy ? "Reasoning…" : "Search"}
+          </button>
+        </div>
+      </div>
+
+      {queryResult && (
+        <div style={{ padding: "12px 24px", background: "#132A38", color: "#DDEAE6" }}>
+          {queryResult.error ? (
+            <span style={{ color: C.flag, fontFamily: C.mono, fontSize: 12 }}>
+              {queryResult.error}
+            </span>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  color: "#8FAFA4",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                }}
+              >
+                INTERPRETED AS → {queryResult.interpretation}
+              </div>
+              {queryResult.matches.length === 0 && (
+                <div style={{ fontSize: 12, color: "#B9C9C4", fontStyle: "italic" }}>
+                  No founders match every criterion. Nothing was force-fit.
+                </div>
+              )}
+              {queryResult.matches.map((m) => {
+                const f = founders.find((x) => x.id === m.id);
+                if (!f) return null;
+                return (
+                  <div key={m.id} style={{ marginBottom: 6 }}>
+                    <button
+                      onClick={() => {
+                        setSelected(f);
+                        setView("dossier");
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#4FBFA6",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        padding: 0,
+                        fontSize: 13,
+                        fontFamily: C.body,
+                      }}
+                    >
+                      {f.name} · {f.company}
+                    </button>
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        color: "#B9C9C4",
+                        fontFamily: C.body,
+                      }}
+                    >
+                      {m.reason}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", minHeight: "calc(100vh - 76px)" }}>
+        {/* Left rail */}
+        <div
+          style={{
+            width: 220,
+            background: C.ink,
+            padding: "16px 10px",
+            flexShrink: 0,
+          }}
+        >
+          <NavBtn id="thesis" label="Thesis Engine" />
+          <NavBtn id="sourcing" label="Sourcing" />
+          <NavBtn id="pipeline" label="Pipeline" />
+          <NavBtn id="dossier" label="Founder dossier" />
+          <NavBtn id="memo" label="Memo" />
+
+          <div
+            style={{
+              marginTop: 30,
+              padding: "12px 14px",
+              borderTop: "1px solid #1C3444",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: C.mono,
+                fontSize: 9,
+                color: "#8FAFA4",
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                marginBottom: 6,
+              }}
+            >
+              MEMORY LAYER
+            </div>
+            <div
+              style={{
+                fontFamily: C.mono,
+                fontSize: 10,
+                color: "#B9C9C4",
+                lineHeight: 1.6,
+              }}
+            >
+              {founders.length} profiles ·{" "}
+              {founders.reduce((n, f) => n + f.signals.length, 0)} signals
+              <br />
+              deduped · timestamped
+              <br />
+              source-tagged · never resets
+            </div>
+          </div>
+        </div>
+
+        {/* Main pane */}
+        <div style={{ flex: 1, padding: "28px 32px", overflow: "auto" }}>
+          {loading && (
+            <div style={{ fontFamily: C.mono, fontSize: 12, color: C.inkSoft }}>
+              Loading founders from memory layer…
+            </div>
+          )}
+
+          {!loading && view === "thesis" && (
+            <ThesisView thesis={thesis} setThesis={setThesis} />
+          )}
+
+          {!loading && view === "sourcing" && (
+            <SourcingView
+              founders={founders}
+              onOpen={(f) => {
+                setSelected(f);
+                setView("dossier");
+              }}
+              onActivate={activate}
+              outreach={outreach}
+              outreachBusy={outreachBusy}
+            />
+          )}
+
+          {!loading && view === "pipeline" && (
+            <PipelineView
+              ranked={ranked}
+              onDossier={(f) => {
+                setSelected(f);
+                setView("dossier");
+              }}
+              onMemo={genMemo}
+            />
+          )}
+
+          {!loading && view === "dossier" && selected && (
+            <DossierView f={selected} onMemo={genMemo} />
+          )}
+
+          {!loading && view === "memo" && (
+            <MemoView memo={memo} memoBusy={memoBusy} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------- Thesis Engine tab -------- */
+function ThesisView({
+  thesis,
+  setThesis,
+}: {
+  thesis: typeof DEFAULT_THESIS;
+  setThesis: React.Dispatch<React.SetStateAction<typeof DEFAULT_THESIS>>;
+}) {
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <h2 style={{ fontFamily: C.disp, fontSize: 30, margin: 0, fontWeight: 600 }}>
+        Thesis Engine
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 24 }}>
+        Every recommendation downstream is filtered and scored through this lens. Change
+        it and watch the pipeline re-rank.
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 16,
+        }}
+      >
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
+            }}
+          >
+            SECTORS
+          </div>
+          {["AI infra", "Applied AI", "AI x Bio"].map((s) => (
+            <label
+              key={s}
+              style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
+            >
+              <input
+                type="checkbox"
+                checked={thesis.sectors.includes(s)}
+                onChange={() =>
+                  setThesis((t) => ({
+                    ...t,
+                    sectors: t.sectors.includes(s)
+                      ? t.sectors.filter((x) => x !== s)
+                      : [...t.sectors, s],
+                  }))
+                }
+              />{" "}
+              {s}
+            </label>
+          ))}
+        </div>
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
+            }}
+          >
+            STAGES
+          </div>
+          {["Pre-seed", "Seed"].map((s) => (
+            <label
+              key={s}
+              style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
+            >
+              <input
+                type="checkbox"
+                checked={thesis.stages.includes(s)}
+                onChange={() =>
+                  setThesis((t) => ({
+                    ...t,
+                    stages: t.stages.includes(s)
+                      ? t.stages.filter((x) => x !== s)
+                      : [...t.stages, s],
+                  }))
+                }
+              />{" "}
+              {s}
+            </label>
+          ))}
+        </div>
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
+            }}
+          >
+            CHECK / OWNERSHIP
+          </div>
+          <div style={{ fontFamily: C.disp, fontSize: 18, marginBottom: 12 }}>
+            ${thesis.check}K · target {thesis.ownership}%
+          </div>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 6,
+            }}
+          >
+            RISK APPETITE
+          </div>
+          <select
+            value={thesis.risk}
+            onChange={(e) => setThesis((t) => ({ ...t, risk: e.target.value }))}
+            style={{
+              fontSize: 13,
+              padding: 6,
+              borderRadius: 6,
+              border: `1px solid ${C.line}`,
+              width: "100%",
+              fontFamily: C.body,
+            }}
+          >
+            <option>High — pre-track-record OK</option>
+            <option>Moderate — prefer track record</option>
+          </select>
+        </div>
+      </div>
+      <div
+        style={{
+          marginTop: 20,
+          fontSize: 12,
+          color: C.inkSoft,
+          fontStyle: "italic",
+          fontFamily: C.body,
+        }}
+      >
+        Fit scoring is transparent — open any pipeline card to see exactly why it
+        ranked where it did.
+      </div>
+    </div>
+  );
+}
+
+/* -------- Sourcing tab -------- */
+function SourcingView({
+  founders,
+  onOpen,
+  onActivate,
+  outreach,
+  outreachBusy,
+}: {
+  founders: Founder[];
+  onOpen: (f: Founder) => void;
+  onActivate: (f: Founder) => void;
+  outreach: { founder: Founder; text: string } | null;
+  outreachBusy: boolean;
+}) {
+  return (
+    <div>
+      <h2 style={{ fontFamily: C.disp, fontSize: 28, margin: 0, fontWeight: 600 }}>
+        Sourcing — one funnel, two doors
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
+        Inbound applications and outbound scans (GitHub, launches, hackathons, papers,
+        accelerators) are scored identically and converge into the same screening step.
+      </p>
+      {founders.map((f) => (
+        <div
+          key={f.id}
+          style={{
+            background: C.card,
+            border: `1px solid ${C.line}`,
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <Chip tone={f.track === "outbound" ? "amber" : "sea"}>{f.track.toUpperCase()}</Chip>
+            <span style={{ fontFamily: C.disp, fontSize: 18, fontWeight: 600 }}>{f.name}</span>
+            <span style={{ fontSize: 13, color: C.inkSoft }}>
+              {f.company} — {f.oneLiner}
+            </span>
+            <span style={{ marginLeft: "auto", fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+              {f.geo}
+            </span>
+          </div>
+          <div>
+            {f.signals.map((s) => (
+              <Evidence key={s.id} s={s} />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button
+              onClick={() => onOpen(f)}
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                borderRadius: 8,
+                border: `1px solid ${C.line}`,
+                background: "#fff",
+                cursor: "pointer",
+                fontFamily: C.body,
+              }}
+            >
+              Open dossier
+            </button>
+            {f.track === "outbound" && (
+              <button
+                onClick={() => onActivate(f)}
+                disabled={outreachBusy}
+                style={{
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: C.sea,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontFamily: C.body,
+                }}
+              >
+                {outreachBusy ? "Drafting…" : "Activate → draft outreach"}
+              </button>
+            )}
+          </div>
+          {outreach && outreach.founder.id === f.id && (
+            <pre
+              style={{
+                marginTop: 10,
+                padding: 12,
+                background: C.seaSoft,
+                borderRadius: 8,
+                fontFamily: C.mono,
+                fontSize: 12,
+                color: C.ink,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {outreach.text}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* -------- Pipeline tab -------- */
+function PipelineView({
+  ranked,
+  onDossier,
+  onMemo,
+}: {
+  ranked: { f: Founder; fit: number; why: string[] }[];
+  onDossier: (f: Founder) => void;
+  onMemo: (f: Founder) => void;
+}) {
+  return (
+    <div>
+      <h2 style={{ fontFamily: C.disp, fontSize: 28, margin: 0, fontWeight: 600 }}>
+        Pipeline — three axes, never averaged
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
+        Founder · Market · Idea-vs-Market are independent. Disagreement between them is
+        the signal — collapsing to one number would hide the decision.
+      </p>
+      {ranked.map(({ f, fit, why }) => {
+        const hasContradiction = f.claims.some((c) => c.flag);
+        return (
+          <div
+            key={f.id}
+            style={{
+              background: C.card,
+              border: `1px solid ${hasContradiction ? C.flag : C.line}`,
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontFamily: C.disp, fontSize: 20, fontWeight: 600 }}>{f.name}</span>
+              <span style={{ fontSize: 13, color: C.inkSoft }}>{f.company}</span>
+              <span style={{ marginLeft: 6 }}>
+                {f.tags.map((t) => (
+                  <Chip
+                    key={t}
+                    tone={t.includes("contradiction") ? "flag" : t.includes("disagree") ? "amber" : "cool"}
+                  >
+                    {t}
+                  </Chip>
+                ))}
+              </span>
+              <span
+                style={{
+                  marginLeft: "auto",
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  color: C.ink,
+                }}
+              >
+                thesis fit {fit}/100
+              </span>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 12,
+                marginBottom: 12,
+              }}
+            >
+              {(
+                [
+                  ["Founder", f.axes.founder],
+                  ["Market", f.axes.market],
+                  ["Idea vs Market", f.axes.ideaVsMarket],
+                ] as const
+              ).map(([label, ax]) => (
+                <div
+                  key={label}
+                  style={{
+                    background: C.paper,
+                    padding: 10,
+                    borderRadius: 8,
+                    border: `1px solid ${C.line}`,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 9,
+                        color: C.inkSoft,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {label.toUpperCase()}
+                    </span>
+                    <Trend t={ax.trend} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 4 }}>
+                    {ax.score === null ? (
+                      <span style={{ fontFamily: C.mono, fontSize: 12, color: C.amber }}>
+                        unscorable — flagged
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600 }}>
+                        {ax.score.toFixed(1)}
+                      </span>
+                    )}
+                    {ax.rating && <Chip tone={ax.rating === "bullish" ? "sea" : "cool"}>{ax.rating}</Chip>}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6, lineHeight: 1.45 }}>
+                    {ax.note}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <details style={{ marginBottom: 8 }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  color: C.inkSoft,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                }}
+              >
+                why this rank (thesis trace)
+              </summary>
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  color: C.inkSoft,
+                  marginTop: 6,
+                  lineHeight: 1.6,
+                }}
+              >
+                {why.map((w, i) => (
+                  <div key={i}>· {w}</div>
+                ))}
+              </div>
+            </details>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => onDossier(f)}
+                style={{
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: `1px solid ${C.line}`,
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontFamily: C.body,
+                }}
+              >
+                Dossier
+              </button>
+              <button
+                onClick={() => onMemo(f)}
+                style={{
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: C.ink,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontFamily: C.body,
+                }}
+              >
+                Generate memo →
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* -------- Dossier tab -------- */
+function DossierView({ f, onMemo }: { f: Founder; onMemo: (f: Founder) => void }) {
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontFamily: C.disp, fontSize: 34, margin: 0, fontWeight: 600 }}>{f.name}</h2>
+        <div style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
+          {f.company} · {f.geo} · {f.sector}
+        </div>
+      </div>
+
+      <div
+        style={{
+          background: C.card,
+          border: `1px solid ${C.line}`,
+          borderRadius: 12,
+          padding: 18,
+          marginBottom: 18,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: C.mono,
+            fontSize: 10,
+            color: C.inkSoft,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            marginBottom: 10,
+          }}
+        >
+          FOUNDER SCORE — lives in Memory, persists across ventures, never resets
+        </div>
+        <ScoreBand fs={f.founderScore} />
+        {f.founderScore.history && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              background: C.coolSoft,
+              borderRadius: 8,
+              fontSize: 12,
+              color: C.cool,
+              fontFamily: C.body,
+            }}
+          >
+            Cross-venture memory: {f.founderScore.history}
+          </div>
+        )}
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 12 }}>
+          <span
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+            }}
+          >
+            90-DAY TREND
+          </span>
+          <Spark data={f.momentum} />
+        </div>
+      </div>
+
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 18 }}>
+        <div
+          style={{
+            fontFamily: C.mono,
+            fontSize: 10,
+            color: C.inkSoft,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            marginBottom: 10,
+          }}
+        >
+          CLAIMS — each traced to evidence with a Trust Score (per claim, not per company)
+        </div>
+        {f.claims.length === 0 && (
+          <div style={{ fontSize: 12, color: C.inkSoft, fontStyle: "italic", marginBottom: 12 }}>
+            No claims yet — profile is signal-only until an application arrives.
+          </div>
+        )}
+        {f.claims.map((c, i) => (
+          <div
+            key={i}
+            style={{
+              borderLeft: `3px solid ${c.trust >= 0.75 ? C.sea : C.amber}`,
+              padding: "8px 12px",
+              marginBottom: 8,
+              background: c.flag ? C.flagSoft : "transparent",
+              borderRadius: c.flag ? 8 : 0,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{c.claim}</span>
+              <TrustDot v={c.trust} />
+              {c.flag && <Chip tone="flag">⚠ {c.flag}</Chip>}
+            </div>
+            <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+              {c.evidence}
+            </div>
+          </div>
+        ))}
+
+        <div
+          style={{
+            fontFamily: C.mono,
+            fontSize: 10,
+            color: C.inkSoft,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            marginTop: 16,
+            marginBottom: 8,
+          }}
+        >
+          RAW SIGNALS
+        </div>
+        {f.signals.map((s) => (
+          <Evidence key={s.id} s={s} />
+        ))}
+
+        <div
+          style={{
+            fontFamily: C.mono,
+            fontSize: 10,
+            color: C.inkSoft,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            marginTop: 16,
+            marginBottom: 8,
+          }}
+        >
+          DECLARED GAPS — flagged, never invented
+        </div>
+        {f.gaps.map((g, i) => (
+          <div key={i} style={{ fontSize: 12, color: C.amber, marginBottom: 4 }}>
+            <Chip tone="amber">gap</Chip> {g}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onMemo(f)}
+        style={{
+          marginTop: 14,
+          fontSize: 13,
+          padding: "10px 18px",
+          borderRadius: 8,
+          border: "none",
+          background: C.ink,
+          color: "#fff",
+          cursor: "pointer",
+          fontWeight: 600,
+          fontFamily: C.body,
+        }}
+      >
+        Generate evidence-backed memo →
+      </button>
+    </div>
+  );
+}
+
+/* -------- Memo tab -------- */
+function MemoView({
+  memo,
+  memoBusy,
+}: {
+  memo: { founder: Founder; text: string } | null;
+  memoBusy: boolean;
+}) {
+  return (
+    <div style={{ maxWidth: 780 }}>
+      <h2 style={{ fontFamily: C.disp, fontSize: 28, margin: 0, fontWeight: 600 }}>
+        Investment memo{memo ? ` — ${memo.founder.name}` : ""}
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
+        Every claim cites its evidence ID and trust level. Gaps are flagged, not filled.
+        Contradictions surface before the investor decides.
+      </p>
+      {memoBusy && (
+        <div
+          style={{
+            fontFamily: C.mono,
+            fontSize: 12,
+            color: C.inkSoft,
+            fontStyle: "italic",
+          }}
+        >
+          Reasoning over the evidence record… (the memo is drafted live from the
+          structured dossier — nothing is templated)
+        </div>
+      )}
+      {!memoBusy && !memo && (
+        <div style={{ fontSize: 13, color: C.inkSoft, fontStyle: "italic" }}>
+          Pick a founder in the Pipeline or Dossier tab and generate a memo.
+        </div>
+      )}
+      {memo && !memoBusy && (
+        <pre
+          style={{
+            background: C.card,
+            border: `1px solid ${C.line}`,
+            borderRadius: 12,
+            padding: 20,
+            fontFamily: C.body,
+            fontSize: 13,
+            lineHeight: 1.65,
+            color: C.ink,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {memo.text}
+        </pre>
+      )}
+    </div>
+  );
+}
