@@ -4,6 +4,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askAI } from "@/lib/periscope-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
+import {
+  generateMemo,
+  scoreCandidate,
+  type CandidateScore,
+} from "@/lib/openai.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
