@@ -224,23 +224,10 @@ export const convergeCandidate = createServerFn({ method: "POST" })
 
     // 4. Build founders row mirroring F-0151 seed shape.
     const id = `OB-${data.identityKey}`;
-    const axes = (cand.axes ?? {
-      founder: {
-        score: null,
-        trend: null,
-        note: "Signal-only profile — awaiting scoring after outreach.",
-      },
-      market: {
-        score: null,
-        trend: null,
-        note: "Unscorable pre-application — flagged, not guessed.",
-      },
-      ideaVsMarket: {
-        score: null,
-        trend: null,
-        note: "Unscorable pre-application — flagged, not guessed.",
-      },
-    }) as unknown;
+    // Normalize cand.axes (CandidateScore snake_case) → Founder DisplayAxes
+    // via the single conversion function. Never spread cand.axes raw.
+    const { toDisplayAxes } = await import("./adapters");
+    const axes = toDisplayAxes(cand.axes, `converge:${data.identityKey}`) as unknown;
 
     const founderScore = (cand.founder_score ?? {
       value: 0,
