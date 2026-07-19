@@ -1590,6 +1590,9 @@ type PeopleCandidate = {
   scored_at: string | null;
   activated_at: string | null;
   outreach_draft: string | null;
+  sector: string | null;
+  stage: string | null;
+  geo: string | null;
 };
 
 function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
