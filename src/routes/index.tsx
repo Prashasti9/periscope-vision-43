@@ -10,6 +10,8 @@ import {
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
+import { submitApplication } from "@/lib/application.functions";
+import { scoreFounder } from "@/lib/openai.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
@@ -670,6 +672,9 @@ function Periscope() {
 
   const ai = useServerFn(askAI);
   const memoFn = useServerFn(generateMemo);
+  const applyFn = useServerFn(submitApplication);
+  const scoreFounderFn = useServerFn(scoreFounder);
+  const [applyOpen, setApplyOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -885,8 +890,42 @@ function Periscope() {
           >
             {queryBusy ? "Reasoning…" : "Search"}
           </button>
+          <button
+            onClick={() => setApplyOpen(true)}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 8,
+              border: `1px solid ${C.sea}`,
+              background: "transparent",
+              color: "#fff",
+              fontFamily: C.body,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Apply
+          </button>
         </div>
       </div>
+
+      {applyOpen && (
+        <ApplyModal
+          onClose={() => setApplyOpen(false)}
+          submit={async (payload) => {
+            const res = await applyFn({ data: payload });
+            // Refresh founders list so the new inbound row appears.
+            const { data } = await supabase
+              .from("founders" as any)
+              .select("*")
+              .order("sort_order", { ascending: true });
+            setFounders((data ?? []).map(rowToFounder));
+            // Fire-and-forget scoring; UI will pick up updates on next load.
+            scoreFounderFn({ data: { founderId: res.id } }).catch(() => {});
+            return res;
+          }}
+        />
+      )}
 
       {queryResult && (
         <div style={{ padding: "12px 24px", background: "#132A38", color: "#DDEAE6" }}>
