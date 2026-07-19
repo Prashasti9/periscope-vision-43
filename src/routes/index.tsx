@@ -673,6 +673,8 @@ function Periscope() {
   const applyFn = useServerFn(submitApplication);
   const scoreFounderFn = useServerFn(scoreFounder);
   const getFoundersFn = useServerFn(getFounders);
+  const getThesisFn = useServerFn(getThesisConfig);
+  const saveThesisFn = useServerFn(saveThesisConfig);
   const [applyOpen, setApplyOpen] = useState(false);
 
   useEffect(() => {
@@ -699,10 +701,42 @@ function Periscope() {
     };
   }, [getFoundersFn]);
 
+  // Load persisted thesis (singleton row) once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    getThesisFn()
+      .then((t) => {
+        if (!cancelled && t) setThesis(t);
+      })
+      .catch(() => {
+        /* keep DEFAULT_THESIS */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getThesisFn]);
+
+  // Debounced persist on every thesis change. Skip the initial default
+  // render — only save once the user (or the server load) has settled.
+  const [thesisLoaded, setThesisLoaded] = useState(false);
+  useEffect(() => {
+    if (!thesisLoaded) {
+      setThesisLoaded(true);
+      return;
+    }
+    const h = setTimeout(() => {
+      saveThesisFn({ data: thesis }).catch(() => {
+        /* non-blocking */
+      });
+    }, 500);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thesis]);
+
   const ranked = useMemo(
     () =>
       founders
-        .map((f) => ({ f, ...thesisFit(f, thesis) }))
+        .map((f) => ({ f, ...thesisFit(founderToThesisInput(f), thesis) }))
         .sort((a, b) => b.fit - a.fit),
     [founders, thesis],
   );
@@ -1071,7 +1105,7 @@ function Periscope() {
 
           {!loading && view === "pipeline" && (
             <>
-              <LivePipelineView />
+              <LivePipelineView thesis={thesis} />
               <div
                 style={{
                   margin: "32px 0 16px",
