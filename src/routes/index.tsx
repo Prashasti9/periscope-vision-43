@@ -1162,17 +1162,42 @@ function ThesisView({
   thesis,
   setThesis,
 }: {
-  thesis: typeof DEFAULT_THESIS;
-  setThesis: React.Dispatch<React.SetStateAction<typeof DEFAULT_THESIS>>;
+  thesis: ThesisConfig;
+  setThesis: React.Dispatch<React.SetStateAction<ThesisConfig>>;
 }) {
+  const cardStyle: React.CSSProperties = {
+    background: C.card,
+    padding: 16,
+    borderRadius: 12,
+    border: `1px solid ${C.line}`,
+  };
+  const labelStyle: React.CSSProperties = {
+    fontFamily: C.mono,
+    fontSize: 10,
+    color: C.inkSoft,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  };
+  const inputStyle: React.CSSProperties = {
+    fontSize: 13,
+    padding: 6,
+    borderRadius: 6,
+    border: `1px solid ${C.line}`,
+    width: "100%",
+    fontFamily: C.body,
+    boxSizing: "border-box",
+  };
+  const [cityInput, setCityInput] = useState("");
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ maxWidth: 1000 }}>
       <h2 style={{ fontFamily: C.disp, fontSize: 30, margin: 0, fontWeight: 600 }}>
         Thesis Engine
       </h2>
       <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 24 }}>
-        Every recommendation downstream is filtered and scored through this lens. Change
-        it and watch the pipeline re-rank.
+        Six filters govern ranking downstream — sector, stage, geography, check size,
+        ownership target, risk. Both the demo Pipeline and live people_candidates
+        re-rank instantly on change (persisted to the backend, no AI re-scoring).
       </p>
       <div
         style={{
@@ -1181,20 +1206,9 @@ function ThesisView({
           gap: 16,
         }}
       >
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
-            }}
-          >
-            SECTORS
-          </div>
-          {["AI infra", "Applied AI", "AI x Bio"].map((s) => (
+        <div style={cardStyle}>
+          <div style={labelStyle}>SECTORS</div>
+          {["AI infra", "Applied AI", "AI x Bio", "Devtools", "Fintech"].map((s) => (
             <label
               key={s}
               style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
@@ -1215,20 +1229,9 @@ function ThesisView({
             </label>
           ))}
         </div>
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
-            }}
-          >
-            STAGES
-          </div>
-          {["Pre-seed", "Seed"].map((s) => (
+        <div style={cardStyle}>
+          <div style={labelStyle}>STAGES</div>
+          {["Pre-seed", "Seed", "Series A", "Series B"].map((s) => (
             <label
               key={s}
               style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
@@ -1249,49 +1252,100 @@ function ThesisView({
             </label>
           ))}
         </div>
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
+        <div style={cardStyle}>
+          <div style={labelStyle}>GEOGRAPHY</div>
+          <div style={{ fontSize: 11, color: C.inkSoft, marginBottom: 6 }}>
+            Regions (leave all unchecked = global)
+          </div>
+          {ALL_REGIONS.map((r) => (
+            <label
+              key={r}
+              style={{ display: "block", fontSize: 13, marginBottom: 4, cursor: "pointer" }}
+            >
+              <input
+                type="checkbox"
+                checked={thesis.geographies.includes(r)}
+                onChange={() =>
+                  setThesis((t) => ({
+                    ...t,
+                    geographies: t.geographies.includes(r)
+                      ? t.geographies.filter((x) => x !== r)
+                      : [...t.geographies, r],
+                  }))
+                }
+              />{" "}
+              {r}
+            </label>
+          ))}
+          <div style={{ fontSize: 11, color: C.inkSoft, margin: "10px 0 4px" }}>
+            Specific cities (comma-separated fragments)
+          </div>
+          <input
+            type="text"
+            value={cityInput || thesis.cities.join(", ")}
+            placeholder="e.g. london, berlin, bangalore"
+            onChange={(e) => {
+              setCityInput(e.target.value);
+              const cities = e.target.value
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean);
+              setThesis((t) => ({ ...t, cities }));
             }}
-          >
-            CHECK / OWNERSHIP
+            style={inputStyle}
+          />
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>CHECK SIZE ($K)</div>
+          <input
+            type="number"
+            value={thesis.check_size}
+            min={10}
+            onChange={(e) =>
+              setThesis((t) => ({ ...t, check_size: Number(e.target.value) || 0 }))
+            }
+            style={inputStyle}
+          />
+          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
+            Used to flag stage/ownership mismatch (e.g. $100K into a $15M Series A).
           </div>
-          <div style={{ fontFamily: C.disp, fontSize: 18, marginBottom: 12 }}>
-            ${thesis.check}K · target {thesis.ownership}%
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>OWNERSHIP TARGET (%)</div>
+          <input
+            type="number"
+            value={thesis.ownership_target}
+            min={0}
+            max={50}
+            step={0.5}
+            onChange={(e) =>
+              setThesis((t) => ({
+                ...t,
+                ownership_target: Number(e.target.value) || 0,
+              }))
+            }
+            style={inputStyle}
+          />
+          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
+            Flag-only. Pipeline cards show a warning when implied % &lt; target.
           </div>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 6,
-            }}
-          >
-            RISK APPETITE
-          </div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>RISK APPETITE</div>
           <select
             value={thesis.risk}
-            onChange={(e) => setThesis((t) => ({ ...t, risk: e.target.value }))}
-            style={{
-              fontSize: 13,
-              padding: 6,
-              borderRadius: 6,
-              border: `1px solid ${C.line}`,
-              width: "100%",
-              fontFamily: C.body,
-            }}
+            onChange={(e) =>
+              setThesis((t) => ({ ...t, risk: e.target.value as Risk }))
+            }
+            style={inputStyle}
           >
-            <option>High — pre-track-record OK</option>
-            <option>Moderate — prefer track record</option>
+            <option value="Conservative">Conservative — require track record</option>
+            <option value="Moderate">Moderate — prefer track record</option>
+            <option value="Aggressive">Aggressive — pre-track-record OK</option>
           </select>
+          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
+            Conservative penalizes cold-start founders; Aggressive removes that penalty.
+          </div>
         </div>
       </div>
       <div
@@ -1303,8 +1357,8 @@ function ThesisView({
           fontFamily: C.body,
         }}
       >
-        Fit scoring is transparent — open any pipeline card to see exactly why it
-        ranked where it did.
+        Fit scoring is transparent — open any pipeline card to see the contribution of
+        every filter under "why this rank (thesis trace)".
       </div>
     </div>
   );
