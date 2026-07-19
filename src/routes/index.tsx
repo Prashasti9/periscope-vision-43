@@ -1443,7 +1443,26 @@ function LivePipelineView() {
         const t = Date.parse(r.scored_at);
         return Number.isNaN(t) || now - t > staleMs;
       });
-      stale.slice(0, 15).forEach((c) => runScore(c.identity_key));
+      // Bounded auto-scoring: top 5 only, in small batches of 2 with a
+      // short delay between batches, each call fully isolated. Manual
+      // "Enrich & score" button covers the rest.
+      (async () => {
+        const toScore = stale.slice(0, 5);
+        for (let i = 0; i < toScore.length; i += 2) {
+          if (cancelled) return;
+          const batch = toScore.slice(i, i + 2);
+          await Promise.all(
+            batch.map((c) =>
+              runScore(c.identity_key).catch(() => {
+                /* runScore already stores { error } — never rethrow */
+              }),
+            ),
+          );
+          if (i + 2 < toScore.length) await new Promise((r) => setTimeout(r, 800));
+        }
+      })().catch(() => {
+        /* defensive: no unhandled rejection escapes */
+      });
     })();
     return () => {
       cancelled = true;
