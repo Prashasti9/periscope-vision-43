@@ -2008,9 +2008,9 @@ function PipelineView({
             >
               {(
                 [
-                  ["Founder", f.axes.founder],
-                  ["Market", f.axes.market],
-                  ["Idea vs Market", f.axes.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown }).idea_vs_market],
+                  ["Founder", f.axes?.founder],
+                  ["Market", f.axes?.market],
+                  ["Idea vs Market", f.axes?.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown } | undefined)?.idea_vs_market],
                 ] as const
               ).map(([label, axRaw]) => {
                 const ax = (axRaw ?? { score: null, trend: null, note: "unscorable — flagged: no data", rating: null }) as {
