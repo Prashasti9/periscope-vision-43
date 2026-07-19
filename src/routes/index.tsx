@@ -1793,7 +1793,16 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         return;
       }
       if (cancelled) return;
-      const rows = ((data ?? []) as unknown as PeopleCandidate[])
+      type RawRow = Omit<PeopleCandidate, "checkAsk" | "ownershipAsk"> & {
+        check_ask?: number | null;
+        ownership_ask?: number | null;
+      };
+      const rows: PeopleCandidate[] = ((data ?? []) as unknown as RawRow[])
+        .map((r) => ({
+          ...r,
+          checkAsk: r.check_ask ?? null,
+          ownershipAsk: r.ownership_ask ?? null,
+        }))
         .sort((a, b) => {
           const ba = isBuilderSource(a.sources) ? 1 : 0;
           const bb = isBuilderSource(b.sources) ? 1 : 0;
