@@ -1384,3 +1384,180 @@ function MemoView({
     </div>
   );
 }
+/* -------- Live signals panel (public API ingestion) -------- */
+type SignalRow = {
+  signal_id: string;
+  source: string;
+  person_or_handle: string;
+  company: string;
+  text: string;
+  url: string;
+  date: string;
+  reliability: number;
+};
+
+function LiveSignalsPanel() {
+  const ingest = useServerFn(runIngest);
+  const [rows, setRows] = useState<SignalRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string>("");
+  const [source, setSource] = useState<string>("all");
+
+  const load = useCallback(async () => {
+    let q = supabase
+      .from("signals" as never)
+      .select("*")
+      .order("date", { ascending: false })
+      .limit(60);
+    if (source !== "all") q = q.eq("source", source);
+    const { data, error } = await q;
+    if (error) {
+      setStatus(`Load failed: ${error.message}`);
+      return;
+    }
+    setRows((data ?? []) as unknown as SignalRow[]);
+  }, [source]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const refresh = async () => {
+    setLoading(true);
+    setStatus("Fetching GitHub, Hacker News, arXiv, and YC…");
+    try {
+      const r = await ingest({ data: { days: 90, limit: 30 } });
+      setStatus(
+        `Ingested ${r.signalCount} signals · ${r.peopleCount} people · sources: ${Object.entries(
+          r.sourceCounts,
+        )
+          .map(([k, v]) => `${k}=${v}`)
+          .join(", ")}`,
+      );
+      await load();
+    } catch (e) {
+      setStatus(`Ingest failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sourceTone: Record<string, "sea" | "amber" | "cool" | "flag"> = {
+    github: "cool",
+    hacker_news: "amber",
+    arxiv: "sea",
+    yc: "flag",
+  };
+
+  return (
+    <div
+      style={{
+        background: C.card,
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 20,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontFamily: C.disp, fontSize: 18, fontWeight: 600 }}>
+          Live signals — public APIs
+        </span>
+        <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+          GitHub · Hacker News · arXiv · YC
+        </span>
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          style={{
+            marginLeft: "auto",
+            fontFamily: C.mono,
+            fontSize: 11,
+            padding: "4px 8px",
+            border: `1px solid ${C.line}`,
+            borderRadius: 6,
+            background: "#fff",
+          }}
+        >
+          <option value="all">all sources</option>
+          <option value="github">github</option>
+          <option value="hacker_news">hacker_news</option>
+          <option value="arxiv">arxiv</option>
+          <option value="yc">yc</option>
+        </select>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          style={{
+            fontSize: 12,
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "none",
+            background: C.sea,
+            color: "#fff",
+            cursor: loading ? "wait" : "pointer",
+            fontWeight: 600,
+            fontFamily: C.body,
+          }}
+        >
+          {loading ? "Ingesting…" : "Refresh live signals"}
+        </button>
+      </div>
+      {status && (
+        <div style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft, marginBottom: 10 }}>
+          {status}
+        </div>
+      )}
+      {rows.length === 0 && !loading && (
+        <div style={{ fontSize: 13, color: C.inkSoft }}>
+          No signals yet. Click <b>Refresh live signals</b> to pull the last 90 days from
+          public APIs.
+        </div>
+      )}
+      <div style={{ display: "grid", gap: 8 }}>
+        {rows.map((s) => (
+          <a
+            key={s.signal_id}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "block",
+              padding: 10,
+              border: `1px solid ${C.line}`,
+              borderRadius: 8,
+              textDecoration: "none",
+              color: C.ink,
+              background: "#fff",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Chip tone={sourceTone[s.source] ?? "sea"}>{s.source}</Chip>
+              {s.person_or_handle && (
+                <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+                  @{s.person_or_handle}
+                </span>
+              )}
+              {s.company && (
+                <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+                  {s.company}
+                </span>
+              )}
+              <span
+                style={{
+                  marginLeft: "auto",
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  color: C.inkSoft,
+                }}
+              >
+                {s.date || "—"}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5 }}>{s.text}</div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
