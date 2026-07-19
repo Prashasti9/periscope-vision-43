@@ -1910,7 +1910,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         const passingScreen = candidates.filter(
           (c) => screened[c.identity_key]?.pass !== false,
         );
-        const matching = passingScreen.filter((c) => thesisMatches(c, thesis));
+        const matching = passingScreen.filter((c) => candidateMatchesThesis(c, thesis));
         if (candidates.length === 0) return null;
         return (
           <div
@@ -1927,7 +1927,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
       })()}
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
-        .filter((c) => thesisMatches(c, thesis))
+        .filter((c) => candidateMatchesThesis(c, thesis))
         .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
@@ -2394,7 +2394,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         const offThesis = candidates.filter(
           (c) =>
             screened[c.identity_key]?.pass !== false &&
-            !thesisMatches(c, thesis),
+            !candidateMatchesThesis(c, thesis),
         );
         if (offThesis.length === 0) return null;
         return (
