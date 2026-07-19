@@ -3273,11 +3273,42 @@ function ApplyModal({
                   cursor: "pointer",
                 }}
               >
+                <label
+                  htmlFor="deck-upload"
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${C.line}`,
+                    background: "#fff",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: C.body,
+                    color: C.ink,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Choose file
+                </label>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: C.inkSoft,
+                    fontFamily: C.body,
+                    maxWidth: 180,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {deckFile ? deckFile.name : "No PDF selected"}
+                </span>
                 <input
+                  id="deck-upload"
                   type="file"
                   accept="application/pdf"
                   onChange={(e) => setDeckFile(e.target.files?.[0] ?? null)}
-                  style={{ cursor: "pointer" }}
+                  style={{ display: "none" }}
                 />
               </div>
             </div>
