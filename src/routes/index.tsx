@@ -708,14 +708,42 @@ function Periscope() {
           )}
 
           {!loading && view === "pipeline" && (
-            <PipelineView
-              ranked={ranked}
-              onDossier={(f) => {
-                setSelected(f);
-                setView("dossier");
-              }}
-              onMemo={genMemo}
-            />
+            <>
+              <LivePipelineView />
+              <div
+                style={{
+                  margin: "32px 0 16px",
+                  paddingTop: 20,
+                  borderTop: `1px dashed ${C.line}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: C.mono,
+                    fontSize: 10,
+                    color: C.inkSoft,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    marginBottom: 6,
+                  }}
+                >
+                  Featured examples — fully-diligenced demo profiles
+                </div>
+                <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 16 }}>
+                  The live Pipeline above runs on real ingested candidates scored in
+                  real time. These six seeded founders keep a fully-populated
+                  dossier/memo path for demoing the end-to-end diligence flow.
+                </div>
+              </div>
+              <PipelineView
+                ranked={ranked}
+                onDossier={(f) => {
+                  setSelected(f);
+                  setView("dossier");
+                }}
+                onMemo={genMemo}
+              />
+            </>
           )}
 
           {!loading && view === "dossier" && selected && (
@@ -992,6 +1020,285 @@ function SourcingView({
 }
 
 /* -------- Pipeline tab -------- */
+type PeopleCandidate = {
+  identity_key: string;
+  person_or_handle: string;
+  sources: string;
+  companies: string;
+  source_count: number;
+  signal_count: number;
+};
+
+function LivePipelineView() {
+  const scoreFn = useServerFn(scoreCandidate);
+  const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string>("");
+  const [scores, setScores] = useState<
+    Record<string, CandidateScore | { error: string }>
+  >({});
+  const [scoring, setScoring] = useState<Record<string, boolean>>({});
+
+  const sourceTone: Record<string, "sea" | "amber" | "cool" | "flag"> = {
+    github: "cool",
+    hacker_news: "amber",
+    arxiv: "sea",
+    yc: "flag",
+  };
+  const isBuilderSource = (s: string) => /github|hacker_news|arxiv/i.test(s);
+
+  const runScore = useCallback(
+    async (key: string) => {
+      setScoring((m) => ({ ...m, [key]: true }));
+      try {
+        const r = await scoreFn({ data: { identityKey: key } });
+        setScores((m) => ({ ...m, [key]: r }));
+      } catch (e) {
+        setScores((m) => ({
+          ...m,
+          [key]: { error: e instanceof Error ? e.message : String(e) },
+        }));
+      } finally {
+        setScoring((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [scoreFn],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("people_candidates" as never)
+        .select("*")
+        .order("signal_count", { ascending: false })
+        .limit(200);
+      if (cancelled) return;
+      if (error) {
+        setErr(error.message);
+        setLoading(false);
+        return;
+      }
+      const rows = ((data ?? []) as unknown as PeopleCandidate[])
+        .sort((a, b) => {
+          const ba = isBuilderSource(a.sources) ? 1 : 0;
+          const bb = isBuilderSource(b.sources) ? 1 : 0;
+          if (ba !== bb) return bb - ba;
+          return b.signal_count - a.signal_count;
+        })
+        .slice(0, 15);
+      setCandidates(rows);
+      setLoading(false);
+      // Auto-score top 3
+      rows.slice(0, 3).forEach((c) => runScore(c.identity_key));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runScore]);
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: C.disp, fontSize: 28, margin: 0, fontWeight: 600 }}>
+        Pipeline — live ingested candidates
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
+        Real people_candidates from GitHub, Hacker News, arXiv, and YC. Builders
+        (GH/HN/arXiv) rank above YC. Three axes scored live by GPT-4o against the
+        candidate's real signals — any axis without enough evidence renders as
+        <b> unscorable — flagged</b>, never a made-up number.
+      </p>
+      {loading && (
+        <div style={{ fontSize: 13, color: C.inkSoft }}>Loading live candidates…</div>
+      )}
+      {err && (
+        <div style={{ fontSize: 13, color: C.flag }}>Load failed: {err}</div>
+      )}
+      {!loading && candidates.length === 0 && (
+        <div style={{ fontSize: 13, color: C.inkSoft }}>
+          No candidates yet. Open the Sourcing tab and click{" "}
+          <b>Refresh live signals</b> to ingest from public APIs.
+        </div>
+      )}
+      {candidates.map((c) => {
+        const key = c.identity_key;
+        const result = scores[key];
+        const busy = scoring[key];
+        const srcList = c.sources
+          .split(";")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        const scored = result && !("error" in result);
+        const axes = scored
+          ? ([
+              ["Founder", result.founder],
+              ["Market", result.market],
+              ["Idea vs Market", result.idea_vs_market],
+            ] as const)
+          : null;
+        return (
+          <div
+            key={key}
+            style={{
+              background: C.card,
+              border: `1px solid ${C.line}`,
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <Chip tone="cool">people candidate</Chip>
+              <span style={{ fontFamily: C.disp, fontSize: 18, fontWeight: 600 }}>
+                @{c.person_or_handle}
+              </span>
+              {srcList.map((s) => (
+                <Chip key={s} tone={sourceTone[s] ?? "sea"}>
+                  {s}
+                </Chip>
+              ))}
+              <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+                {c.signal_count} signals · {c.source_count} sources
+              </span>
+              <button
+                onClick={() => runScore(key)}
+                disabled={busy}
+                style={{
+                  marginLeft: "auto",
+                  fontSize: 12,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: `1px solid ${C.sea}`,
+                  background: busy ? C.seaSoft : "#fff",
+                  color: C.sea,
+                  cursor: busy ? "wait" : "pointer",
+                  fontFamily: C.body,
+                  fontWeight: 600,
+                }}
+              >
+                {busy ? "Scoring…" : result ? "Rescore" : "Score"}
+              </button>
+            </div>
+            {c.companies && (
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  color: C.inkSoft,
+                  marginBottom: 10,
+                }}
+              >
+                {c.companies}
+              </div>
+            )}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 12,
+              }}
+            >
+              {(["Founder", "Market", "Idea vs Market"] as const).map((label, i) => {
+                const ax = axes ? axes[i][1] : null;
+                return (
+                  <div
+                    key={label}
+                    style={{
+                      background: C.paper,
+                      padding: 10,
+                      borderRadius: 8,
+                      border: `1px solid ${C.line}`,
+                      minHeight: 88,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 9,
+                        color: C.inkSoft,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        marginBottom: 6,
+                      }}
+                    >
+                      {label}
+                    </div>
+                    {!ax && !busy && (
+                      <div style={{ fontSize: 11, color: C.inkSoft }}>
+                        Not scored yet — click <b>Score</b>.
+                      </div>
+                    )}
+                    {!ax && busy && (
+                      <div style={{ fontSize: 11, color: C.inkSoft }}>Scoring…</div>
+                    )}
+                    {ax && ax.unscorable && (
+                      <>
+                        <Chip tone="amber">unscorable — flagged</Chip>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.inkSoft,
+                            marginTop: 6,
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {ax.reason}
+                        </div>
+                      </>
+                    )}
+                    {ax && !ax.unscorable && ax.score !== null && (
+                      <>
+                        <div style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600 }}>
+                          {ax.score}/10
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.inkSoft,
+                            marginTop: 6,
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {ax.reason}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {result && "error" in result && (
+              <div style={{ marginTop: 8, fontSize: 12, color: C.flag }}>
+                {result.error}
+              </div>
+            )}
+            {scored && result.sources_used.length > 0 && (
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  color: C.inkSoft,
+                  marginTop: 8,
+                }}
+              >
+                sources: {result.sources_used.join(", ")}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PipelineView({
   ranked,
   onDossier,
