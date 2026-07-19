@@ -1089,7 +1089,12 @@ function Periscope() {
           )}
 
           {!loading && view === "thesis" && (
-            <ThesisView thesis={thesis} setThesis={setThesis} />
+            <ThesisView
+              thesis={thesis}
+              setThesis={setThesis}
+              founders={founders}
+              matchCount={ranked.length}
+            />
           )}
 
           {!loading && view === "sourcing" && (
