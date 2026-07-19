@@ -1784,7 +1784,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn, getCandidatesFn]);
+  }, [runScore, screenFn, getCandidatesFn, thesis]);
 
   return (
     <div>
