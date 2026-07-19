@@ -344,6 +344,7 @@ function Periscope() {
   const [outreachBusy, setOutreachBusy] = useState(false);
 
   const ai = useServerFn(askAI);
+  const memoFn = useServerFn(generateMemo);
 
   useEffect(() => {
     let cancelled = false;
