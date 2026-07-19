@@ -935,7 +935,7 @@ function FounderCompass() {
       >
         <div>
           <div style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600, lineHeight: 1 }}>
-            FounderCompass
+            Founder Compass
           </div>
           <div
             style={{
