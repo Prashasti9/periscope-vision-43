@@ -1355,6 +1355,16 @@ type PeopleCandidate = {
   companies: string;
   source_count: number;
   signal_count: number;
+  axes: CandidateScore | null;
+  founder_score: {
+    value: number;
+    low: number;
+    high: number;
+    trend: string;
+    coldStart: boolean;
+  } | null;
+  momentum: number[];
+  scored_at: string | null;
 };
 
 function LivePipelineView() {
@@ -1417,8 +1427,23 @@ function LivePipelineView() {
         .slice(0, 50);
       setCandidates(rows);
       setLoading(false);
-      // Auto enrich + score the top 15 by signal_count (builder-sources first).
-      rows.slice(0, 15).forEach((c) => runScore(c.identity_key));
+      // Seed from persisted axes so we don't re-score every session.
+      const seeded: Record<string, CandidateScore> = {};
+      for (const r of rows) {
+        if (r.axes) seeded[r.identity_key] = r.axes;
+      }
+      if (Object.keys(seeded).length > 0) {
+        setScores((m) => ({ ...seeded, ...m }));
+      }
+      // Only score rows whose scored_at is null or older than 7 days.
+      const staleMs = 7 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const stale = rows.filter((r) => {
+        if (!r.scored_at) return true;
+        const t = Date.parse(r.scored_at);
+        return Number.isNaN(t) || now - t > staleMs;
+      });
+      stale.slice(0, 15).forEach((c) => runScore(c.identity_key));
     })();
     return () => {
       cancelled = true;
