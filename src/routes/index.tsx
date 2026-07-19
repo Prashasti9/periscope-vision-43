@@ -1066,9 +1066,6 @@ function Periscope() {
                 setSelected(f);
                 setView("dossier");
               }}
-              onActivate={activate}
-              outreach={outreach}
-              outreachBusy={outreachBusy}
             />
           )}
 
