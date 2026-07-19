@@ -7,6 +7,7 @@ import { runIngest } from "@/lib/ingest.functions";
 import {
   generateMemo,
   scoreCandidate,
+  screenCandidate,
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
