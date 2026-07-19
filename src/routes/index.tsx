@@ -3,20 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { askAI } from "@/lib/periscope-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
-import {
-  getFounders,
-  getPeopleCandidates,
-  getSignals,
-  getThesisConfig,
-  saveThesisConfig,
-} from "@/lib/data.functions";
-import {
-  DEFAULT_THESIS,
-  thesisFit,
-  ALL_REGIONS,
-  type ThesisConfig,
-  type Risk,
-} from "@/lib/thesis";
+import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
 import {
   generateMemo,
   scoreCandidate,
@@ -90,14 +77,35 @@ type Founder = {
   momentum: number[];
 };
 
-function founderToThesisInput(f: Founder) {
-  return {
-    sector: f.sector,
-    stage: f.stage,
-    geo: f.geo,
-    coldStart: f.founderScore.coldStart,
-    founderScore: f.founderScore.value,
-  };
+const DEFAULT_THESIS = {
+  sectors: ["AI infra", "Applied AI"],
+  stages: ["Pre-seed", "Seed"],
+  geos: "Global",
+  check: 100,
+  ownership: 7,
+  risk: "High — pre-track-record OK",
+};
+
+function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
+  let fit = 0;
+  const why: string[] = [];
+  if (thesis.sectors.includes(f.sector)) {
+    fit += 40;
+    why.push(`sector ∈ thesis (${f.sector})`);
+  } else why.push(`sector outside thesis (${f.sector})`);
+  if (thesis.stages.includes(f.stage)) {
+    fit += 30;
+    why.push(`stage ∈ thesis (${f.stage})`);
+  }
+  const risky = f.founderScore.coldStart;
+  if (risky && thesis.risk.startsWith("High")) {
+    fit += 15;
+    why.push("cold-start allowed by risk appetite");
+  } else if (risky) {
+    why.push("cold-start penalized by risk appetite");
+  } else fit += 10;
+  fit += Math.round((f.founderScore.value / 1000) * 15);
+  return { fit, why };
 }
 
 /* -------- Primitives -------- */
@@ -673,8 +681,6 @@ function Periscope() {
   const applyFn = useServerFn(submitApplication);
   const scoreFounderFn = useServerFn(scoreFounder);
   const getFoundersFn = useServerFn(getFounders);
-  const getThesisFn = useServerFn(getThesisConfig);
-  const saveThesisFn = useServerFn(saveThesisConfig);
   const [applyOpen, setApplyOpen] = useState(false);
 
   useEffect(() => {
@@ -701,42 +707,10 @@ function Periscope() {
     };
   }, [getFoundersFn]);
 
-  // Load persisted thesis (singleton row) once on mount.
-  useEffect(() => {
-    let cancelled = false;
-    getThesisFn()
-      .then((t) => {
-        if (!cancelled && t) setThesis(t);
-      })
-      .catch(() => {
-        /* keep DEFAULT_THESIS */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [getThesisFn]);
-
-  // Debounced persist on every thesis change. Skip the initial default
-  // render — only save once the user (or the server load) has settled.
-  const [thesisLoaded, setThesisLoaded] = useState(false);
-  useEffect(() => {
-    if (!thesisLoaded) {
-      setThesisLoaded(true);
-      return;
-    }
-    const h = setTimeout(() => {
-      saveThesisFn({ data: thesis }).catch(() => {
-        /* non-blocking */
-      });
-    }, 500);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thesis]);
-
   const ranked = useMemo(
     () =>
       founders
-        .map((f) => ({ f, ...thesisFit(founderToThesisInput(f), thesis) }))
+        .map((f) => ({ f, ...thesisFit(f, thesis) }))
         .sort((a, b) => b.fit - a.fit),
     [founders, thesis],
   );
@@ -1105,7 +1079,7 @@ function Periscope() {
 
           {!loading && view === "pipeline" && (
             <>
-              <LivePipelineView thesis={thesis} />
+              <LivePipelineView />
               <div
                 style={{
                   margin: "32px 0 16px",
@@ -1162,42 +1136,17 @@ function ThesisView({
   thesis,
   setThesis,
 }: {
-  thesis: ThesisConfig;
-  setThesis: React.Dispatch<React.SetStateAction<ThesisConfig>>;
+  thesis: typeof DEFAULT_THESIS;
+  setThesis: React.Dispatch<React.SetStateAction<typeof DEFAULT_THESIS>>;
 }) {
-  const cardStyle: React.CSSProperties = {
-    background: C.card,
-    padding: 16,
-    borderRadius: 12,
-    border: `1px solid ${C.line}`,
-  };
-  const labelStyle: React.CSSProperties = {
-    fontFamily: C.mono,
-    fontSize: 10,
-    color: C.inkSoft,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  };
-  const inputStyle: React.CSSProperties = {
-    fontSize: 13,
-    padding: 6,
-    borderRadius: 6,
-    border: `1px solid ${C.line}`,
-    width: "100%",
-    fontFamily: C.body,
-    boxSizing: "border-box",
-  };
-  const [cityInput, setCityInput] = useState("");
   return (
-    <div style={{ maxWidth: 1000 }}>
+    <div style={{ maxWidth: 900 }}>
       <h2 style={{ fontFamily: C.disp, fontSize: 30, margin: 0, fontWeight: 600 }}>
         Thesis Engine
       </h2>
       <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 24 }}>
-        Six filters govern ranking downstream — sector, stage, geography, check size,
-        ownership target, risk. Both the demo Pipeline and live people_candidates
-        re-rank instantly on change (persisted to the backend, no AI re-scoring).
+        Every recommendation downstream is filtered and scored through this lens. Change
+        it and watch the pipeline re-rank.
       </p>
       <div
         style={{
@@ -1206,9 +1155,20 @@ function ThesisView({
           gap: 16,
         }}
       >
-        <div style={cardStyle}>
-          <div style={labelStyle}>SECTORS</div>
-          {["AI infra", "Applied AI", "AI x Bio", "Devtools", "Fintech"].map((s) => (
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
+            }}
+          >
+            SECTORS
+          </div>
+          {["AI infra", "Applied AI", "AI x Bio"].map((s) => (
             <label
               key={s}
               style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
@@ -1229,9 +1189,20 @@ function ThesisView({
             </label>
           ))}
         </div>
-        <div style={cardStyle}>
-          <div style={labelStyle}>STAGES</div>
-          {["Pre-seed", "Seed", "Series A", "Series B"].map((s) => (
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
+            }}
+          >
+            STAGES
+          </div>
+          {["Pre-seed", "Seed"].map((s) => (
             <label
               key={s}
               style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
@@ -1252,100 +1223,49 @@ function ThesisView({
             </label>
           ))}
         </div>
-        <div style={cardStyle}>
-          <div style={labelStyle}>GEOGRAPHY</div>
-          <div style={{ fontSize: 11, color: C.inkSoft, marginBottom: 6 }}>
-            Regions (leave all unchecked = global)
-          </div>
-          {ALL_REGIONS.map((r) => (
-            <label
-              key={r}
-              style={{ display: "block", fontSize: 13, marginBottom: 4, cursor: "pointer" }}
-            >
-              <input
-                type="checkbox"
-                checked={thesis.geographies.includes(r)}
-                onChange={() =>
-                  setThesis((t) => ({
-                    ...t,
-                    geographies: t.geographies.includes(r)
-                      ? t.geographies.filter((x) => x !== r)
-                      : [...t.geographies, r],
-                  }))
-                }
-              />{" "}
-              {r}
-            </label>
-          ))}
-          <div style={{ fontSize: 11, color: C.inkSoft, margin: "10px 0 4px" }}>
-            Specific cities (comma-separated fragments)
-          </div>
-          <input
-            type="text"
-            value={cityInput || thesis.cities.join(", ")}
-            placeholder="e.g. london, berlin, bangalore"
-            onChange={(e) => {
-              setCityInput(e.target.value);
-              const cities = e.target.value
-                .split(",")
-                .map((x) => x.trim())
-                .filter(Boolean);
-              setThesis((t) => ({ ...t, cities }));
+        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 10,
             }}
-            style={inputStyle}
-          />
-        </div>
-        <div style={cardStyle}>
-          <div style={labelStyle}>CHECK SIZE ($K)</div>
-          <input
-            type="number"
-            value={thesis.check_size}
-            min={10}
-            onChange={(e) =>
-              setThesis((t) => ({ ...t, check_size: Number(e.target.value) || 0 }))
-            }
-            style={inputStyle}
-          />
-          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
-            Used to flag stage/ownership mismatch (e.g. $100K into a $15M Series A).
+          >
+            CHECK / OWNERSHIP
           </div>
-        </div>
-        <div style={cardStyle}>
-          <div style={labelStyle}>OWNERSHIP TARGET (%)</div>
-          <input
-            type="number"
-            value={thesis.ownership_target}
-            min={0}
-            max={50}
-            step={0.5}
-            onChange={(e) =>
-              setThesis((t) => ({
-                ...t,
-                ownership_target: Number(e.target.value) || 0,
-              }))
-            }
-            style={inputStyle}
-          />
-          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
-            Flag-only. Pipeline cards show a warning when implied % &lt; target.
+          <div style={{ fontFamily: C.disp, fontSize: 18, marginBottom: 12 }}>
+            ${thesis.check}K · target {thesis.ownership}%
           </div>
-        </div>
-        <div style={cardStyle}>
-          <div style={labelStyle}>RISK APPETITE</div>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 6,
+            }}
+          >
+            RISK APPETITE
+          </div>
           <select
             value={thesis.risk}
-            onChange={(e) =>
-              setThesis((t) => ({ ...t, risk: e.target.value as Risk }))
-            }
-            style={inputStyle}
+            onChange={(e) => setThesis((t) => ({ ...t, risk: e.target.value }))}
+            style={{
+              fontSize: 13,
+              padding: 6,
+              borderRadius: 6,
+              border: `1px solid ${C.line}`,
+              width: "100%",
+              fontFamily: C.body,
+            }}
           >
-            <option value="Conservative">Conservative — require track record</option>
-            <option value="Moderate">Moderate — prefer track record</option>
-            <option value="Aggressive">Aggressive — pre-track-record OK</option>
+            <option>High — pre-track-record OK</option>
+            <option>Moderate — prefer track record</option>
           </select>
-          <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 6 }}>
-            Conservative penalizes cold-start founders; Aggressive removes that penalty.
-          </div>
         </div>
       </div>
       <div
@@ -1357,8 +1277,8 @@ function ThesisView({
           fontFamily: C.body,
         }}
       >
-        Fit scoring is transparent — open any pipeline card to see the contribution of
-        every filter under "why this rank (thesis trace)".
+        Fit scoring is transparent — open any pipeline card to see exactly why it
+        ranked where it did.
       </div>
     </div>
   );
@@ -1454,7 +1374,7 @@ type PeopleCandidate = {
   outreach_draft: string | null;
 };
 
-function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
+function LivePipelineView() {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
@@ -1682,23 +1602,6 @@ function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
         .map((c) => {
-          const fs = c.founder_score;
-          const trace = thesisFit(
-            {
-              // people_candidates rows have no structured sector/stage/geo — they
-              // stay "unknown → neutral" until enrichment fills them in.
-              sector: null,
-              stage: null,
-              geo: null,
-              coldStart: fs ? Boolean(fs.coldStart) : true,
-              founderScore: fs?.value ?? null,
-            },
-            thesis,
-          );
-          return { c, trace };
-        })
-        .sort((a, b) => b.trace.fit - a.trace.fit)
-        .map(({ c, trace }) => {
         const key = c.identity_key;
         const result = scores[key];
         const busy = scoring[key];
@@ -1745,16 +1648,6 @@ function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
               ))}
               <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
                 {c.signal_count} signals · {c.source_count} sources
-              </span>
-              <span
-                style={{
-                  fontFamily: C.mono,
-                  fontSize: 11,
-                  color: C.ink,
-                  marginLeft: 8,
-                }}
-              >
-                thesis fit {trace.fit}/100
               </span>
               <button
                 onClick={() => runScore(key)}
@@ -1944,45 +1837,6 @@ function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
                 sources: {result.sources_used.join(", ")}
               </div>
             )}
-            {trace.ownershipFlag && (
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 11,
-                  color: C.amber,
-                  fontFamily: C.mono,
-                }}
-              >
-                ⚠ {trace.ownershipFlag}
-              </div>
-            )}
-            <details style={{ marginTop: 10 }}>
-              <summary
-                style={{
-                  cursor: "pointer",
-                  fontFamily: C.mono,
-                  fontSize: 10,
-                  color: C.inkSoft,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.5,
-                }}
-              >
-                why this rank (thesis trace)
-              </summary>
-              <div
-                style={{
-                  fontFamily: C.mono,
-                  fontSize: 11,
-                  color: C.inkSoft,
-                  marginTop: 6,
-                  lineHeight: 1.6,
-                }}
-              >
-                {trace.why.map((w, i) => (
-                  <div key={i}>· {w}</div>
-                ))}
-              </div>
-            </details>
             {/* -------- Activate → Converge (outbound only) -------- */}
             {(() => {
               const isActivated = Boolean(activated[key] ?? c.activated_at);
@@ -2218,7 +2072,7 @@ function PipelineView({
   onDossier,
   onMemo,
 }: {
-  ranked: { f: Founder; fit: number; why: string[]; ownershipFlag: string | null }[];
+  ranked: { f: Founder; fit: number; why: string[] }[];
   onDossier: (f: Founder) => void;
   onMemo: (f: Founder) => void;
 }) {
@@ -2231,7 +2085,7 @@ function PipelineView({
         Founder · Market · Idea-vs-Market are independent. Disagreement between them is
         the signal — collapsing to one number would hide the decision.
       </p>
-      {ranked.map(({ f, fit, why, ownershipFlag }) => {
+      {ranked.map(({ f, fit, why }) => {
         const hasContradiction = f.claims.some((c) => c.flag);
         return (
           <div
@@ -2359,18 +2213,6 @@ function PipelineView({
                 ))}
               </div>
             </details>
-            {ownershipFlag && (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: C.amber,
-                  fontFamily: C.mono,
-                  marginBottom: 8,
-                }}
-              >
-                ⚠ {ownershipFlag}
-              </div>
-            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => onDossier(f)}
