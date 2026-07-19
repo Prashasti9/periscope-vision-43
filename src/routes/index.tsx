@@ -2218,7 +2218,7 @@ function PipelineView({
   onDossier,
   onMemo,
 }: {
-  ranked: { f: Founder; fit: number; why: string[] }[];
+  ranked: { f: Founder; fit: number; why: string[]; ownershipFlag: string | null }[];
   onDossier: (f: Founder) => void;
   onMemo: (f: Founder) => void;
 }) {
@@ -2231,7 +2231,7 @@ function PipelineView({
         Founder · Market · Idea-vs-Market are independent. Disagreement between them is
         the signal — collapsing to one number would hide the decision.
       </p>
-      {ranked.map(({ f, fit, why }) => {
+      {ranked.map(({ f, fit, why, ownershipFlag }) => {
         const hasContradiction = f.claims.some((c) => c.flag);
         return (
           <div
@@ -2359,6 +2359,18 @@ function PipelineView({
                 ))}
               </div>
             </details>
+            {ownershipFlag && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: C.amber,
+                  fontFamily: C.mono,
+                  marginBottom: 8,
+                }}
+              >
+                ⚠ {ownershipFlag}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 onClick={() => onDossier(f)}
