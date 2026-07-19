@@ -522,6 +522,9 @@ export const scoreFounder = createServerFn({ method: "POST" })
       sources_used: Array.isArray(parsed.sources_used)
         ? parsed.sources_used.filter((x): x is string => typeof x === "string")
         : [],
+      sector: null,
+      stage: null,
+      geo: null,
     };
 
     // Composite founder_score (weighted; skip unscorable axes).
