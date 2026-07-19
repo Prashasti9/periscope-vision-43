@@ -94,11 +94,19 @@ const RISK_OPTIONS = [
   "Moderate — prefer track record",
 ];
 
-function thesisMatches(f: Founder, thesis: typeof DEFAULT_THESIS) {
-  if (thesis.sectors.length > 0 && !thesis.sectors.includes(f.sector)) return false;
-  if (thesis.stages.length > 0 && !thesis.stages.includes(f.stage)) return false;
-  if (thesis.geos.length > 0 && !thesis.geos.includes(f.geo)) return false;
-  return true;
+function thesisMatches(
+  item: { sector?: string | null; stage?: string | null; geo?: string | null },
+  thesis: typeof DEFAULT_THESIS,
+) {
+  // A null/missing classification always passes — an unclassified candidate
+  // stays visible (gap is implicit) rather than being silently dropped.
+  const sectorOk =
+    !item.sector || thesis.sectors.length === 0 || thesis.sectors.includes(item.sector);
+  const stageOk =
+    !item.stage || thesis.stages.length === 0 || thesis.stages.includes(item.stage);
+  const geoOk =
+    !item.geo || thesis.geos.length === 0 || thesis.geos.includes(item.geo);
+  return sectorOk && stageOk && geoOk;
 }
 
 function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
