@@ -1541,6 +1541,129 @@ function LiveSignalsPanel() {
           public APIs.
         </div>
       )}
+      {rows.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft, marginBottom: 6 }}>
+            Score candidates (GPT-4o, evidence-only, 1–10 per axis)
+          </div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {Array.from(
+              rows.reduce((m, s) => {
+                if (!s.person_or_handle) return m;
+                const k = normId(s.person_or_handle);
+                if (!m.has(k)) m.set(k, s.person_or_handle);
+                return m;
+              }, new Map<string, string>()),
+            )
+              .slice(0, 12)
+              .map(([key, handle]) => {
+                const result = scores[key];
+                const busy = scoring[key];
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 8,
+                      padding: 8,
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: C.mono, fontSize: 12 }}>@{handle}</span>
+                      <button
+                        onClick={() => runScore(handle)}
+                        disabled={busy}
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 11,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${C.sea}`,
+                          background: busy ? C.seaSoft : "#fff",
+                          color: C.sea,
+                          cursor: busy ? "wait" : "pointer",
+                          fontFamily: C.body,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {busy ? "Scoring…" : result ? "Rescore" : "Score candidate"}
+                      </button>
+                    </div>
+                    {result && "error" in result && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: C.flag }}>
+                        {result.error}
+                      </div>
+                    )}
+                    {result && !("error" in result) && (
+                      <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                        {(
+                          [
+                            ["Founder", result.founder],
+                            ["Market", result.market],
+                            ["Idea vs Market", result.idea_vs_market],
+                          ] as const
+                        ).map(([label, ax]) => (
+                          <div
+                            key={label}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "flex-start",
+                              fontSize: 12,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: C.mono,
+                                width: 110,
+                                color: C.inkSoft,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {label}
+                            </span>
+                            {ax.unscorable ? (
+                              <Chip tone="amber">unscorable — flagged</Chip>
+                            ) : (
+                              <span
+                                style={{
+                                  fontFamily: C.disp,
+                                  fontSize: 15,
+                                  fontWeight: 600,
+                                  color: C.sea,
+                                  width: 32,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {ax.score}/10
+                              </span>
+                            )}
+                            <span style={{ color: C.ink, lineHeight: 1.4 }}>
+                              {ax.reason}
+                            </span>
+                          </div>
+                        ))}
+                        {result.sources_used.length > 0 && (
+                          <div
+                            style={{
+                              fontFamily: C.mono,
+                              fontSize: 10,
+                              color: C.inkSoft,
+                              marginTop: 4,
+                            }}
+                          >
+                            sources: {result.sources_used.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
       <div style={{ display: "grid", gap: 8 }}>
         {rows.map((s) => (
           <a
