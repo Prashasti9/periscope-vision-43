@@ -380,13 +380,138 @@ export const scoreCandidate = createServerFn({ method: "POST" })
           founder_score: founderScoreRow as unknown as never,
           momentum: nextMomentum as unknown as never,
           scored_at: new Date().toISOString(),
-          sector: result.sector as unknown as never,
-          stage: result.stage as unknown as never,
-          geo: result.geo as unknown as never,
         })
         .eq("identity_key", data.identityKey);
     } catch {
       // persistence is best-effort — never fail the score call
+    }
+
+    return result;
+  });
+
+/* =========================================================
+   classifyCandidate: cheap, dedicated classifier for the
+   thesis filter. Uses SCREEN_MODEL (gpt-4o-mini) — never the
+   expensive scorer — so classification adds negligible cost
+   and latency. Extracts sector / stage / geo / checkAsk /
+   ownershipAsk from the same evidence bundle scoreCandidate
+   uses. Hard rule: return null for any field the evidence
+   doesn't clearly support — never infer, never estimate.
+   Persists the result (nulls included) onto the row.
+   ========================================================= */
+export type CandidateClassification = {
+  sector: string | null;
+  stage: string | null;
+  geo: string | null;
+  checkAsk: number | null;
+  ownershipAsk: number | null;
+};
+
+export const classifyCandidate = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => {
+    const v = input as { identityKey?: unknown };
+    if (typeof v?.identityKey !== "string" || !v.identityKey)
+      throw new Error("identityKey required");
+    return { identityKey: v.identityKey };
+  })
+  .handler(async ({ data }): Promise<CandidateClassification> => {
+    const empty: CandidateClassification = {
+      sector: null,
+      stage: null,
+      geo: null,
+      checkAsk: null,
+      ownershipAsk: null,
+    };
+
+    // Reuse the same enrichment path scoreCandidate uses.
+    let payload: unknown;
+    try {
+      const { enrichCandidate } = await import("./enrich.functions");
+      const enriched = await enrichCandidate({ data: { identityKey: data.identityKey } });
+      payload = {
+        candidate: {
+          person_or_handle: enriched.person_or_handle,
+          identity_key: enriched.identity_key,
+          companies: enriched.companies,
+        },
+        signals: enriched.signals,
+        github_profile: enriched.github_profile,
+        web_evidence: enriched.web_evidence,
+      };
+    } catch {
+      return empty;
+    }
+
+    const system =
+      "You classify a candidate's investment metadata from the SAME public " +
+      "evidence used for scoring (GitHub profile, retrieved web evidence, " +
+      "raw signals). Extract 5 fields: sector, stage, geo, checkAsk (in $K, " +
+      "integer), ownershipAsk (percent, number). HARD RULE: return null for " +
+      "any field the evidence does NOT clearly state or strongly imply. " +
+      "Never infer, never estimate, never guess from vibes. Missing data " +
+      "must produce null, not a plausible value. " +
+      "Return STRICT JSON only, no prose, no backticks. Schema: " +
+      "{\"sector\": string|null, \"stage\": string|null, \"geo\": string|null, " +
+      "\"checkAsk\": int|null, \"ownershipAsk\": number|null}. " +
+      "sector examples: 'AI infra', 'Applied AI', 'Devtools', 'Fintech', 'Bio', 'Consumer'. " +
+      "stage examples: 'Pre-seed', 'Seed', 'Series A'. " +
+      "geo examples: 'SF Bay', 'NYC', 'London', 'Berlin', 'Remote'.";
+
+    let result: CandidateClassification = empty;
+    try {
+      const raw = await callOpenAI({
+        model: SCREEN_MODEL,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(payload) },
+        ],
+      });
+      const j = JSON.parse(raw) as {
+        sector?: unknown;
+        stage?: unknown;
+        geo?: unknown;
+        checkAsk?: unknown;
+        ownershipAsk?: unknown;
+      };
+      const normStr = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() && v.trim().toLowerCase() !== "null"
+          ? v.trim()
+          : null;
+      const normNum = (v: unknown): number | null => {
+        if (v == null) return null;
+        const n = typeof v === "number" ? v : Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const checkAskRaw = normNum(j.checkAsk);
+      result = {
+        sector: normStr(j.sector),
+        stage: normStr(j.stage),
+        geo: normStr(j.geo),
+        checkAsk: checkAskRaw == null ? null : Math.round(checkAskRaw),
+        ownershipAsk: normNum(j.ownershipAsk),
+      };
+    } catch {
+      // Classifier is best-effort — leave all nulls on failure.
+      result = empty;
+    }
+
+    // Persist the classification (including nulls) onto the row. Non-fatal.
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("people_candidates")
+        .update({
+          sector: result.sector as unknown as never,
+          stage: result.stage as unknown as never,
+          geo: result.geo as unknown as never,
+          check_ask: result.checkAsk as unknown as never,
+          ownership_ask: result.ownershipAsk as unknown as never,
+        })
+        .eq("identity_key", data.identityKey);
+    } catch {
+      /* persistence best-effort */
     }
 
     return result;
