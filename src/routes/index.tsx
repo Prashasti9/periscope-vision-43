@@ -110,6 +110,53 @@ function thesisMatches(
   return sectorOk && stageOk && geoOk;
 }
 
+/* parseCheck / parseOwnership: turn the dropdown strings into
+   numeric thesis targets for the outbound candidate filter.
+   "$50K" → 50, "$250K+" → 250; "3-5%" → midpoint 4. */
+function parseCheckK(s: string): number {
+  const m = s.match(/(\d+)/);
+  return m ? Number(m[1]) : 100;
+}
+function parseOwnershipPct(s: string): number {
+  const m = s.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+  if (m) return (Number(m[1]) + Number(m[2])) / 2;
+  const one = s.match(/(\d+(?:\.\d+)?)/);
+  return one ? Number(one[1]) : 4;
+}
+
+/* candidateMatchesThesis: outbound-only, stricter filter that
+   additionally checks check_ask / ownership_ask and risk (cold
+   start). Every clause treats null/unknown as a pass — a
+   candidate is only excluded when a field IS populated and it
+   conflicts with the thesis. Never excluded for missing data. */
+function candidateMatchesThesis(
+  c: {
+    sector?: string | null;
+    stage?: string | null;
+    geo?: string | null;
+    checkAsk?: number | null;
+    ownershipAsk?: number | null;
+    founder_score?: { coldStart?: boolean } | null;
+  },
+  thesis: typeof DEFAULT_THESIS,
+) {
+  const sectorOk =
+    !c.sector || thesis.sectors.length === 0 || thesis.sectors.includes(c.sector);
+  const stageOk =
+    !c.stage || thesis.stages.length === 0 || thesis.stages.includes(c.stage);
+  const geoOk =
+    !c.geo || thesis.geos.length === 0 || thesis.geos.includes(c.geo);
+  const targetCheck = parseCheckK(thesis.check);
+  const checkOk =
+    c.checkAsk == null || Math.abs(c.checkAsk - targetCheck) <= targetCheck * 0.5;
+  const targetOwnership = parseOwnershipPct(thesis.ownership);
+  const ownershipOk =
+    c.ownershipAsk == null || Math.abs(c.ownershipAsk - targetOwnership) <= 3;
+  const coldStart = c.founder_score?.coldStart;
+  const riskOk = coldStart == null || !coldStart || thesis.risk.startsWith("High");
+  return sectorOk && stageOk && geoOk && checkOk && ownershipOk && riskOk;
+}
+
 function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
   let fit = 0;
   const why: string[] = [];
