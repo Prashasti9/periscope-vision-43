@@ -94,11 +94,19 @@ const RISK_OPTIONS = [
   "Moderate — prefer track record",
 ];
 
-function thesisMatches(f: Founder, thesis: typeof DEFAULT_THESIS) {
-  if (thesis.sectors.length > 0 && !thesis.sectors.includes(f.sector)) return false;
-  if (thesis.stages.length > 0 && !thesis.stages.includes(f.stage)) return false;
-  if (thesis.geos.length > 0 && !thesis.geos.includes(f.geo)) return false;
-  return true;
+function thesisMatches(
+  item: { sector?: string | null; stage?: string | null; geo?: string | null },
+  thesis: typeof DEFAULT_THESIS,
+) {
+  // A null/missing classification always passes — an unclassified candidate
+  // stays visible (gap is implicit) rather than being silently dropped.
+  const sectorOk =
+    !item.sector || thesis.sectors.length === 0 || thesis.sectors.includes(item.sector);
+  const stageOk =
+    !item.stage || thesis.stages.length === 0 || thesis.stages.includes(item.stage);
+  const geoOk =
+    !item.geo || thesis.geos.length === 0 || thesis.geos.includes(item.geo);
+  return sectorOk && stageOk && geoOk;
 }
 
 function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
@@ -1582,6 +1590,9 @@ type PeopleCandidate = {
   scored_at: string | null;
   activated_at: string | null;
   outreach_draft: string | null;
+  sector: string | null;
+  stage: string | null;
+  geo: string | null;
 };
 
 function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
@@ -1602,6 +1613,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
     Record<string, { pass: boolean; reason: string }>
   >({});
   const [showRejected, setShowRejected] = useState(false);
+  const [showOffThesis, setShowOffThesis] = useState(false);
   // Outreach draft state, keyed by identity_key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [drafting, setDrafting] = useState<Record<string, boolean>>({});
@@ -1809,8 +1821,28 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
           <b>Refresh live signals</b> to ingest from public APIs.
         </div>
       )}
+      {(() => {
+        const passingScreen = candidates.filter(
+          (c) => screened[c.identity_key]?.pass !== false,
+        );
+        const matching = passingScreen.filter((c) => thesisMatches(c, thesis));
+        if (candidates.length === 0) return null;
+        return (
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 11,
+              color: C.inkSoft,
+              margin: "0 0 12px 0",
+            }}
+          >
+            {matching.length} of {passingScreen.length} outbound candidates match current thesis
+          </div>
+        );
+      })()}
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
+        .filter((c) => thesisMatches(c, thesis))
         .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
@@ -2268,6 +2300,71 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      {(() => {
+        const offThesis = candidates.filter(
+          (c) =>
+            screened[c.identity_key]?.pass !== false &&
+            !thesisMatches(c, thesis),
+        );
+        if (offThesis.length === 0) return null;
+        return (
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={() => setShowOffThesis((v) => !v)}
+              style={{
+                fontFamily: C.mono,
+                fontSize: 11,
+                color: C.inkSoft,
+                background: "transparent",
+                border: `1px dashed ${C.line}`,
+                borderRadius: 8,
+                padding: "6px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {showOffThesis ? "▾" : "▸"} Outside current thesis — {offThesis.length}
+            </button>
+            {showOffThesis && (
+              <div style={{ marginTop: 10 }}>
+                {offThesis.map((c) => (
+                  <div
+                    key={c.identity_key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      background: C.paper,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 8,
+                      marginBottom: 6,
+                      fontSize: 12,
+                    }}
+                  >
+                    <Chip tone="cool">off-thesis</Chip>
+                    <span style={{ fontFamily: C.disp, fontWeight: 600 }}>
+                      @{c.person_or_handle}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 10,
+                        color: C.inkSoft,
+                      }}
+                    >
+                      {[c.sector, c.stage, c.geo].filter(Boolean).join(" · ") ||
+                        "unclassified"}
+                    </span>
+                    <span style={{ color: C.inkSoft, marginLeft: "auto" }}>
+                      {c.sources}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

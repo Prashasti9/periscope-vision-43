@@ -86,14 +86,17 @@ export type Database = {
           axes: Json | null
           companies: string
           founder_score: Json | null
+          geo: string | null
           identity_key: string
           momentum: Json
           outreach_draft: string | null
           person_or_handle: string
           scored_at: string | null
+          sector: string | null
           signal_count: number
           source_count: number
           sources: string
+          stage: string | null
           updated_at: string
         }
         Insert: {
@@ -101,14 +104,17 @@ export type Database = {
           axes?: Json | null
           companies?: string
           founder_score?: Json | null
+          geo?: string | null
           identity_key: string
           momentum?: Json
           outreach_draft?: string | null
           person_or_handle: string
           scored_at?: string | null
+          sector?: string | null
           signal_count?: number
           source_count?: number
           sources?: string
+          stage?: string | null
           updated_at?: string
         }
         Update: {
@@ -116,14 +122,17 @@ export type Database = {
           axes?: Json | null
           companies?: string
           founder_score?: Json | null
+          geo?: string | null
           identity_key?: string
           momentum?: Json
           outreach_draft?: string | null
           person_or_handle?: string
           scored_at?: string | null
+          sector?: string | null
           signal_count?: number
           source_count?: number
           sources?: string
+          stage?: string | null
           updated_at?: string
         }
         Relationships: []

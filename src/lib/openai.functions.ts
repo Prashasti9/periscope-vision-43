@@ -190,6 +190,9 @@ export type CandidateScore = {
   market: AxisScore;
   idea_vs_market: AxisScore;
   sources_used: string[];
+  sector: string | null;
+  stage: string | null;
+  geo: string | null;
 };
 
 export const scoreCandidate = createServerFn({ method: "POST" })
@@ -298,6 +301,9 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       sources_used: Array.isArray(parsed.sources_used)
         ? parsed.sources_used.filter((x): x is string => typeof x === "string")
         : [],
+      sector: null,
+      stage: null,
+      geo: null,
     };
 
     // Composite founder_score: weighted rollup of the three axes.
@@ -328,6 +334,45 @@ export const scoreCandidate = createServerFn({ method: "POST" })
           high: round1(highSum / wSum),
         }
       : null;
+
+    // Second, cheaper pass: classify sector / stage / geo from the SAME
+    // evidence already gathered. Model is instructed to return null when
+    // evidence is weak — we never guess these fields.
+    try {
+      const classifySystem =
+        "You classify a candidate's sector, stage, and geography from the " +
+        "SAME public evidence used for scoring (GitHub profile, retrieved " +
+        "web evidence, raw signals). Rules: if the evidence does NOT " +
+        "clearly support a confident classification for a field, return " +
+        "null for that field. Do NOT infer from weak signal, do not guess. " +
+        "Return STRICT JSON: {\"sector\": string|null, \"stage\": string|null, \"geo\": string|null}. " +
+        "sector examples: 'AI infra', 'Applied AI', 'Devtools', 'Fintech', 'Bio', 'Consumer'. " +
+        "stage examples: 'Pre-seed', 'Seed', 'Series A'. " +
+        "geo examples: 'SF Bay', 'NYC', 'London', 'Berlin', 'Remote'.";
+      const classifyRaw = await callOpenAI({
+        model: SCREEN_MODEL,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: classifySystem },
+          { role: "user", content: JSON.stringify(payload) },
+        ],
+      });
+      const c = JSON.parse(classifyRaw) as {
+        sector?: unknown;
+        stage?: unknown;
+        geo?: unknown;
+      };
+      const norm = (v: unknown): string | null =>
+        typeof v === "string" && v.trim() && v.trim().toLowerCase() !== "null"
+          ? v.trim()
+          : null;
+      result.sector = norm(c.sector);
+      result.stage = norm(c.stage);
+      result.geo = norm(c.geo);
+    } catch {
+      // classification is best-effort — leave nulls on failure
+    }
 
     // Persist onto the people_candidates row: merge axes, append composite
     // value to momentum (cap 10), set scored_at = now(). Non-fatal on error.
@@ -370,6 +415,9 @@ export const scoreCandidate = createServerFn({ method: "POST" })
           founder_score: founderScoreRow as unknown as never,
           momentum: nextMomentum as unknown as never,
           scored_at: new Date().toISOString(),
+          sector: result.sector as unknown as never,
+          stage: result.stage as unknown as never,
+          geo: result.geo as unknown as never,
         })
         .eq("identity_key", data.identityKey);
     } catch {
@@ -474,6 +522,9 @@ export const scoreFounder = createServerFn({ method: "POST" })
       sources_used: Array.isArray(parsed.sources_used)
         ? parsed.sources_used.filter((x): x is string => typeof x === "string")
         : [],
+      sector: null,
+      stage: null,
+      geo: null,
     };
 
     // Composite founder_score (weighted; skip unscorable axes).
