@@ -100,10 +100,6 @@ export type CandidateScore = {
   sources_used: string[];
 };
 
-function normalizeIdentity(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 export const scoreCandidate = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => {
     const v = input as { identityKey?: unknown };
