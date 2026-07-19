@@ -862,7 +862,7 @@ function Periscope() {
       {/* Top bar */}
       <div
         style={{
-          background: C.ink,
+          background: C.petrol,
           color: "#fff",
           padding: "14px 24px",
           display: "flex",
@@ -2620,7 +2620,7 @@ function DossierView({ f, onMemo }: { f: Founder; onMemo: (f: Founder) => void }
           padding: "10px 18px",
           borderRadius: 8,
           border: "none",
-          background: C.ink,
+          background: C.petrol,
           color: "#fff",
           cursor: "pointer",
           fontWeight: 600,
