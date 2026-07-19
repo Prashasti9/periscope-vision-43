@@ -10,7 +10,7 @@ import {
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
-import { submitApplication } from "@/lib/application.functions";
+import { submitApplication, convergeCandidate } from "@/lib/application.functions";
 import { scoreFounder } from "@/lib/openai.functions";
 
 export const Route = createFileRoute("/")({
@@ -1066,9 +1066,6 @@ function Periscope() {
                 setSelected(f);
                 setView("dossier");
               }}
-              onActivate={activate}
-              outreach={outreach}
-              outreachBusy={outreachBusy}
             />
           )}
 
@@ -1283,15 +1280,9 @@ function ThesisView({
 function SourcingView({
   founders,
   onOpen,
-  onActivate,
-  outreach,
-  outreachBusy,
 }: {
   founders: Founder[];
   onOpen: (f: Founder) => void;
-  onActivate: (f: Founder) => void;
-  outreach: { founder: Founder; text: string } | null;
-  outreachBusy: boolean;
 }) {
   return (
     <div>
@@ -1301,6 +1292,8 @@ function SourcingView({
       <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
         Inbound applications and outbound scans (GitHub, launches, hackathons, papers,
         accelerators) are scored identically and converge into the same screening step.
+        Outbound activation now lives next to real ingested candidates in the{" "}
+        <b>Pipeline</b> tab, not on the seeded demo founders below.
       </p>
       <LiveSignalsPanel />
       {founders.map((f) => (
@@ -1344,42 +1337,7 @@ function SourcingView({
             >
               Open dossier
             </button>
-            {f.track === "outbound" && (
-              <button
-                onClick={() => onActivate(f)}
-                disabled={outreachBusy}
-                style={{
-                  fontSize: 12,
-                  padding: "6px 12px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: C.sea,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontFamily: C.body,
-                }}
-              >
-                {outreachBusy ? "Drafting…" : "Activate → draft outreach"}
-              </button>
-            )}
           </div>
-          {outreach && outreach.founder.id === f.id && (
-            <pre
-              style={{
-                marginTop: 10,
-                padding: 12,
-                background: C.seaSoft,
-                borderRadius: 8,
-                fontFamily: C.mono,
-                fontSize: 12,
-                color: C.ink,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {outreach.text}
-            </pre>
-          )}
         </div>
       ))}
     </div>
@@ -1404,10 +1362,14 @@ type PeopleCandidate = {
   } | null;
   momentum: number[];
   scored_at: string | null;
+  activated_at: string | null;
+  outreach_draft: string | null;
 };
 
 function LivePipelineView() {
   const scoreFn = useServerFn(scoreCandidate);
+  const aiFn = useServerFn(askAI);
+  const convergeFn = useServerFn(convergeCandidate);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1415,6 +1377,12 @@ function LivePipelineView() {
     Record<string, CandidateScore | { error: string }>
   >({});
   const [scoring, setScoring] = useState<Record<string, boolean>>({});
+  // Outreach draft state, keyed by identity_key.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafting, setDrafting] = useState<Record<string, boolean>>({});
+  const [converging, setConverging] = useState<Record<string, boolean>>({});
+  const [activated, setActivated] = useState<Record<string, string>>({});
+  const [activateErr, setActivateErr] = useState<Record<string, string>>({});
 
   const sourceTone: Record<string, "sea" | "amber" | "cool" | "flag"> = {
     github: "cool",
@@ -1440,6 +1408,63 @@ function LivePipelineView() {
       }
     },
     [scoreFn],
+  );
+
+  const draftOutreach = useCallback(
+    async (c: PeopleCandidate) => {
+      const key = c.identity_key;
+      setDrafting((m) => ({ ...m, [key]: true }));
+      setActivateErr((m) => ({ ...m, [key]: "" }));
+      try {
+        const text = await aiFn({
+          data: {
+            prompt: `Handle: @${c.person_or_handle}. Public sources: ${c.sources}. Companies/repos inferred: ${c.companies || "(none)"}. Signal count: ${c.signal_count}. Draft a 90-word cold outreach email from an investor. Reference the SPECIFIC public work (repo, paper, post) that triggered this. Goal: get them to submit an application (deck + company name). Tone: peer-to-peer, zero flattery-spam. Plain text.`,
+            system:
+              "You write outreach that converts builders into applicants. Cold outreach, not cold investment.",
+          },
+        });
+        setDrafts((m) => ({ ...m, [key]: text }));
+      } catch (e) {
+        setActivateErr((m) => ({
+          ...m,
+          [key]: "Draft engine unreachable — " + (e instanceof Error ? e.message : String(e)),
+        }));
+      } finally {
+        setDrafting((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [aiFn],
+  );
+
+  const confirmActivate = useCallback(
+    async (c: PeopleCandidate) => {
+      const key = c.identity_key;
+      const draft = drafts[key];
+      if (!draft) return;
+      setConverging((m) => ({ ...m, [key]: true }));
+      setActivateErr((m) => ({ ...m, [key]: "" }));
+      try {
+        const r = await convergeFn({
+          data: { identityKey: key, outreachDraft: draft },
+        });
+        setActivated((m) => ({ ...m, [key]: r.activatedAt }));
+        setCandidates((rows) =>
+          rows.map((row) =>
+            row.identity_key === key
+              ? { ...row, activated_at: r.activatedAt, outreach_draft: draft }
+              : row,
+          ),
+        );
+      } catch (e) {
+        setActivateErr((m) => ({
+          ...m,
+          [key]: "Converge failed — " + (e instanceof Error ? e.message : String(e)),
+        }));
+      } finally {
+        setConverging((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [convergeFn, drafts],
   );
 
   useEffect(() => {
@@ -1474,6 +1499,17 @@ function LivePipelineView() {
       if (Object.keys(seeded).length > 0) {
         setScores((m) => ({ ...seeded, ...m }));
       }
+      // Seed activation state + outreach drafts from persisted columns.
+      const seedActivated: Record<string, string> = {};
+      const seedDrafts: Record<string, string> = {};
+      for (const r of rows) {
+        if (r.activated_at) seedActivated[r.identity_key] = r.activated_at;
+        if (r.outreach_draft) seedDrafts[r.identity_key] = r.outreach_draft;
+      }
+      if (Object.keys(seedActivated).length > 0)
+        setActivated((m) => ({ ...seedActivated, ...m }));
+      if (Object.keys(seedDrafts).length > 0)
+        setDrafts((m) => ({ ...seedDrafts, ...m }));
       // Only score rows whose scored_at is null or older than 7 days.
       const staleMs = 7 * 24 * 60 * 60 * 1000;
       const now = Date.now();
@@ -1767,6 +1803,139 @@ function LivePipelineView() {
                 sources: {result.sources_used.join(", ")}
               </div>
             )}
+            {/* -------- Activate → Converge (outbound only) -------- */}
+            {(() => {
+              const isActivated = Boolean(activated[key] ?? c.activated_at);
+              const draft = drafts[key];
+              const isDrafting = drafting[key];
+              const isConverging = converging[key];
+              const errMsg = activateErr[key];
+              return (
+                <div
+                  style={{
+                    marginTop: 12,
+                    paddingTop: 12,
+                    borderTop: `1px dashed ${C.line}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 10,
+                        color: C.inkSoft,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      Outbound activate
+                    </span>
+                    {isActivated ? (
+                      <>
+                        <Chip tone="sea">activated</Chip>
+                        <span
+                          style={{
+                            fontFamily: C.mono,
+                            fontSize: 10,
+                            color: C.inkSoft,
+                          }}
+                        >
+                          {new Date(
+                            activated[key] ?? c.activated_at ?? "",
+                          ).toLocaleString()}{" "}
+                          · now a founders row (track=outbound), flows through
+                          Screening / Dossier / Memo like an inbound application.
+                        </span>
+                      </>
+                    ) : !draft ? (
+                      <button
+                        onClick={() => draftOutreach(c)}
+                        disabled={isDrafting}
+                        style={{
+                          fontSize: 12,
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: C.sea,
+                          color: "#fff",
+                          cursor: isDrafting ? "wait" : "pointer",
+                          fontFamily: C.body,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {isDrafting ? "Drafting outreach…" : "Activate → draft outreach"}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => confirmActivate(c)}
+                          disabled={isConverging}
+                          style={{
+                            fontSize: 12,
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: C.sea,
+                            color: "#fff",
+                            cursor: isConverging ? "wait" : "pointer",
+                            fontFamily: C.body,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {isConverging
+                            ? "Converging into founders…"
+                            : "Mark as activated → converge to founders"}
+                        </button>
+                        <button
+                          onClick={() => draftOutreach(c)}
+                          disabled={isDrafting}
+                          style={{
+                            fontSize: 12,
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: `1px solid ${C.line}`,
+                            background: "#fff",
+                            cursor: isDrafting ? "wait" : "pointer",
+                            fontFamily: C.body,
+                          }}
+                        >
+                          {isDrafting ? "Re-drafting…" : "Re-draft"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {(draft || c.outreach_draft) && (
+                    <pre
+                      style={{
+                        marginTop: 10,
+                        padding: 12,
+                        background: C.seaSoft,
+                        borderRadius: 8,
+                        fontFamily: C.mono,
+                        fontSize: 12,
+                        color: C.ink,
+                        whiteSpace: "pre-wrap",
+                        margin: "10px 0 0 0",
+                      }}
+                    >
+                      {draft ?? c.outreach_draft}
+                    </pre>
+                  )}
+                  {errMsg && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: C.flag }}>
+                      {errMsg}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
       })}

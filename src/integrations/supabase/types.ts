@@ -82,11 +82,13 @@ export type Database = {
       }
       people_candidates: {
         Row: {
+          activated_at: string | null
           axes: Json | null
           companies: string
           founder_score: Json | null
           identity_key: string
           momentum: Json
+          outreach_draft: string | null
           person_or_handle: string
           scored_at: string | null
           signal_count: number
@@ -95,11 +97,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          activated_at?: string | null
           axes?: Json | null
           companies?: string
           founder_score?: Json | null
           identity_key: string
           momentum?: Json
+          outreach_draft?: string | null
           person_or_handle: string
           scored_at?: string | null
           signal_count?: number
@@ -108,11 +112,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          activated_at?: string | null
           axes?: Json | null
           companies?: string
           founder_score?: Json | null
           identity_key?: string
           momentum?: Json
+          outreach_draft?: string | null
           person_or_handle?: string
           scored_at?: string | null
           signal_count?: number
