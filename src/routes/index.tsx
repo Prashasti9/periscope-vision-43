@@ -836,11 +836,12 @@ function Periscope() {
         border: "none",
         cursor: "pointer",
         background: view === id ? C.card : "transparent",
-        color: view === id ? C.ink : "#B9C9C4",
+        color: view === id ? C.ink : C.ink,
         fontFamily: C.body,
         fontSize: 13,
-        fontWeight: view === id ? 600 : 400,
+        fontWeight: view === id ? 600 : 500,
         borderRadius: 8,
+        borderLeft: view === id ? `3px solid ${C.sea}` : "3px solid transparent",
         marginBottom: 2,
       }}
     >
@@ -1032,7 +1033,7 @@ function Periscope() {
         <div
           style={{
             width: 220,
-            background: C.petrol,
+            background: "#EEF1F0",
             padding: "16px 10px",
             flexShrink: 0,
           }}
@@ -1048,14 +1049,14 @@ function Periscope() {
             style={{
               marginTop: 30,
               padding: "12px 14px",
-              borderTop: "1px solid #1C3444",
+              borderTop: `1px solid ${C.line}`,
             }}
           >
             <div
               style={{
                 fontFamily: C.mono,
                 fontSize: 9,
-                color: "#8FAFA4",
+                color: C.inkSoft,
                 textTransform: "uppercase",
                 letterSpacing: 0.6,
                 marginBottom: 6,
@@ -1067,7 +1068,7 @@ function Periscope() {
               style={{
                 fontFamily: C.mono,
                 fontSize: 10,
-                color: "#B9C9C4",
+                color: C.inkSoft,
                 lineHeight: 1.6,
               }}
             >
