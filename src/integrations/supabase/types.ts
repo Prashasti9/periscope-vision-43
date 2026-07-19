@@ -82,27 +82,39 @@ export type Database = {
       }
       people_candidates: {
         Row: {
+          axes: Json | null
           companies: string
+          founder_score: Json | null
           identity_key: string
+          momentum: Json
           person_or_handle: string
+          scored_at: string | null
           signal_count: number
           source_count: number
           sources: string
           updated_at: string
         }
         Insert: {
+          axes?: Json | null
           companies?: string
+          founder_score?: Json | null
           identity_key: string
+          momentum?: Json
           person_or_handle: string
+          scored_at?: string | null
           signal_count?: number
           source_count?: number
           sources?: string
           updated_at?: string
         }
         Update: {
+          axes?: Json | null
           companies?: string
+          founder_score?: Json | null
           identity_key?: string
+          momentum?: Json
           person_or_handle?: string
+          scored_at?: string | null
           signal_count?: number
           source_count?: number
           sources?: string
