@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
 import { askAI } from "@/lib/periscope-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
+import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
 import {
   generateMemo,
   scoreCandidate,
@@ -680,21 +680,22 @@ function Periscope() {
   const memoFn = useServerFn(generateMemo);
   const applyFn = useServerFn(submitApplication);
   const scoreFounderFn = useServerFn(scoreFounder);
+  const getFoundersFn = useServerFn(getFounders);
   const [applyOpen, setApplyOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("founders" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
-      if (cancelled) return;
-      if (error) {
+      let data: any[] = [];
+      try {
+        data = await getFoundersFn();
+      } catch (error) {
+        if (cancelled) return;
         console.error(error);
         setLoading(false);
         return;
       }
+      if (cancelled) return;
       const list = (data ?? []).map(rowToFounder);
       setFounders(list);
       if (list[1]) setSelected(list[1]);
@@ -704,7 +705,7 @@ function Periscope() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [getFoundersFn]);
 
   const ranked = useMemo(
     () =>
@@ -921,11 +922,12 @@ function Periscope() {
           submit={async (payload) => {
             const res = await applyFn({ data: payload });
             // Refresh founders list so the new inbound row appears.
-            const { data } = await supabase
-              .from("founders" as any)
-              .select("*")
-              .order("sort_order", { ascending: true });
-            setFounders((data ?? []).map(rowToFounder));
+            try {
+              const data = await getFoundersFn();
+              setFounders((data ?? []).map(rowToFounder));
+            } catch (e) {
+              console.error(e);
+            }
             // Fire-and-forget scoring; UI will pick up updates on next load.
             scoreFounderFn({ data: { founderId: res.id } }).catch(() => {});
             return res;
@@ -1377,6 +1379,7 @@ function LivePipelineView() {
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
+  const getCandidatesFn = useServerFn(getPeopleCandidates);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1482,17 +1485,16 @@ function LivePipelineView() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("people_candidates" as never)
-        .select("*")
-        .order("signal_count", { ascending: false })
-        .limit(200);
-      if (cancelled) return;
-      if (error) {
-        setErr(error.message);
+      let data: unknown[] = [];
+      try {
+        data = await getCandidatesFn({ data: { limit: 200 } });
+      } catch (error) {
+        if (cancelled) return;
+        setErr(error instanceof Error ? error.message : String(error));
         setLoading(false);
         return;
       }
+      if (cancelled) return;
       const rows = ((data ?? []) as unknown as PeopleCandidate[])
         .sort((a, b) => {
           const ba = isBuilderSource(a.sources) ? 1 : 0;
@@ -1572,7 +1574,7 @@ function LivePipelineView() {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn]);
+  }, [runScore, screenFn, getCandidatesFn]);
 
   return (
     <div>
@@ -2482,6 +2484,8 @@ type SignalRow = {
 function LiveSignalsPanel() {
   const ingest = useServerFn(runIngest);
   const scoreFn = useServerFn(scoreCandidate);
+  const getSignalsFn = useServerFn(getSignals);
+  const getCandidatesFn = useServerFn(getPeopleCandidates);
   const [rows, setRows] = useState<SignalRow[]>([]);
   const [candidates, setCandidates] = useState<
     Array<{
@@ -2522,27 +2526,20 @@ function LiveSignalsPanel() {
   );
 
   const load = useCallback(async () => {
-    let q = supabase
-      .from("signals" as never)
-      .select("*")
-      .order("date", { ascending: false })
-      .limit(60);
-    if (source !== "all") q = q.eq("source", source);
-    const { data, error } = await q;
-    if (error) {
-      setStatus(`Load failed: ${error.message}`);
+    try {
+      const data = await getSignalsFn({ data: { source, limit: 60 } });
+      setRows(data as unknown as SignalRow[]);
+    } catch (error) {
+      setStatus(`Load failed: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    setRows((data ?? []) as unknown as SignalRow[]);
-    const { data: cData, error: cErr } = await supabase
-      .from("people_candidates" as never)
-      .select("*")
-      .order("signal_count", { ascending: false })
-      .limit(200);
-    if (!cErr) {
-      setCandidates((cData ?? []) as unknown as typeof candidates);
+    try {
+      const cData = await getCandidatesFn({ data: { limit: 200 } });
+      setCandidates(cData as unknown as typeof candidates);
+    } catch {
+      /* non-fatal */
     }
-  }, [source]);
+  }, [source, getSignalsFn, getCandidatesFn]);
 
   useEffect(() => {
     load();
