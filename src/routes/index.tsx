@@ -1374,6 +1374,7 @@ type PeopleCandidate = {
 
 function LivePipelineView() {
   const scoreFn = useServerFn(scoreCandidate);
+  const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
@@ -1383,6 +1384,11 @@ function LivePipelineView() {
     Record<string, CandidateScore | { error: string }>
   >({});
   const [scoring, setScoring] = useState<Record<string, boolean>>({});
+  // Pre-screen state: identity_key -> {pass, reason}. Absent = not yet screened.
+  const [screened, setScreened] = useState<
+    Record<string, { pass: boolean; reason: string }>
+  >({});
+  const [showRejected, setShowRejected] = useState(false);
   // Outreach draft state, keyed by identity_key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [drafting, setDrafting] = useState<Record<string, boolean>>({});
