@@ -1648,6 +1648,7 @@ type PeopleCandidate = {
 function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
+  const classifyFn = useServerFn(classifyCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const getCandidatesFn = useServerFn(getPeopleCandidates);
@@ -1693,8 +1694,33 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
       } finally {
         setScoring((m) => ({ ...m, [key]: false }));
       }
+      // Classify sector / stage / geo / checkAsk / ownershipAsk in
+      // parallel with the score render — cheap SCREEN_MODEL call,
+      // fully isolated: any failure is swallowed so it never blocks
+      // the score UI. Updates the local row so the thesis filter
+      // reacts immediately without needing a page reload.
+      classifyFn({ data: { identityKey: key } })
+        .then((cls) => {
+          setCandidates((rows) =>
+            rows.map((row) =>
+              row.identity_key === key
+                ? {
+                    ...row,
+                    sector: cls.sector,
+                    stage: cls.stage,
+                    geo: cls.geo,
+                    checkAsk: cls.checkAsk,
+                    ownershipAsk: cls.ownershipAsk,
+                  }
+                : row,
+            ),
+          );
+        })
+        .catch(() => {
+          /* classifier is best-effort — never surface to user */
+        });
     },
-    [scoreFn],
+    [scoreFn, classifyFn],
   );
 
   const draftOutreach = useCallback(
