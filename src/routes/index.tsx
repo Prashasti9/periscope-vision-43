@@ -1049,14 +1049,14 @@ function Periscope() {
             style={{
               marginTop: 30,
               padding: "12px 14px",
-              borderTop: "1px solid #1C3444",
+              borderTop: `1px solid ${C.line}`,
             }}
           >
             <div
               style={{
                 fontFamily: C.mono,
                 fontSize: 9,
-                color: "#8FAFA4",
+                color: C.inkSoft,
                 textTransform: "uppercase",
                 letterSpacing: 0.6,
                 marginBottom: 6,
@@ -1068,7 +1068,7 @@ function Periscope() {
               style={{
                 fontFamily: C.mono,
                 fontSize: 10,
-                color: "#B9C9C4",
+                color: C.inkSoft,
                 lineHeight: 1.6,
               }}
             >
