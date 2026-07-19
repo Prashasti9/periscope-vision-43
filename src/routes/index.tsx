@@ -725,9 +725,9 @@ function Periscope() {
       oneLiner: f.oneLiner,
       founderScore: f.founderScore.value,
       axes: {
-        founder: f.axes.founder.score,
-        market: f.axes.market.score,
-        ideaVsMarket: f.axes.ideaVsMarket.score,
+        founder: f.axes?.founder?.score ?? null,
+        market: f.axes?.market?.score ?? null,
+        ideaVsMarket: f.axes?.ideaVsMarket?.score ?? null,
       },
     }));
     try {
