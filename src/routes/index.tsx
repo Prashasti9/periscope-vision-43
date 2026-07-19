@@ -1820,8 +1820,28 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
           <b>Refresh live signals</b> to ingest from public APIs.
         </div>
       )}
+      {(() => {
+        const passingScreen = candidates.filter(
+          (c) => screened[c.identity_key]?.pass !== false,
+        );
+        const matching = passingScreen.filter((c) => thesisMatches(c, thesis));
+        if (candidates.length === 0) return null;
+        return (
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 11,
+              color: C.inkSoft,
+              margin: "0 0 12px 0",
+            }}
+          >
+            {matching.length} of {passingScreen.length} outbound candidates match current thesis
+          </div>
+        );
+      })()}
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
+        .filter((c) => thesisMatches(c, thesis))
         .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
