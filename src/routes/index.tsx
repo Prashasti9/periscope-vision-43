@@ -78,22 +78,36 @@ type Founder = {
 };
 
 const DEFAULT_THESIS = {
-  sectors: ["AI infra", "Applied AI"],
-  stages: ["Pre-seed", "Seed"],
-  geos: "Global",
-  check: 100,
-  ownership: 7,
+  sectors: [] as string[],
+  stages: [] as string[],
+  geos: [] as string[],
+  check: "$100K",
+  ownership: "3-5%",
   risk: "High — pre-track-record OK",
 };
+
+const CHECK_OPTIONS = ["$50K", "$100K", "$150K", "$250K+"];
+const OWNERSHIP_OPTIONS = ["1-3%", "3-5%", "5-10%"];
+const RISK_OPTIONS = [
+  "High — pre-track-record OK",
+  "Moderate — prefer track record",
+];
+
+function thesisMatches(f: Founder, thesis: typeof DEFAULT_THESIS) {
+  if (thesis.sectors.length > 0 && !thesis.sectors.includes(f.sector)) return false;
+  if (thesis.stages.length > 0 && !thesis.stages.includes(f.stage)) return false;
+  if (thesis.geos.length > 0 && !thesis.geos.includes(f.geo)) return false;
+  return true;
+}
 
 function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
   let fit = 0;
   const why: string[] = [];
-  if (thesis.sectors.includes(f.sector)) {
+  if (thesis.sectors.length === 0 || thesis.sectors.includes(f.sector)) {
     fit += 40;
     why.push(`sector ∈ thesis (${f.sector})`);
   } else why.push(`sector outside thesis (${f.sector})`);
-  if (thesis.stages.includes(f.stage)) {
+  if (thesis.stages.length === 0 || thesis.stages.includes(f.stage)) {
     fit += 30;
     why.push(`stage ∈ thesis (${f.stage})`);
   }
@@ -105,6 +119,16 @@ function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
     why.push("cold-start penalized by risk appetite");
   } else fit += 10;
   fit += Math.round((f.founderScore.value / 1000) * 15);
+  const traction = f.founderScore.value;
+  if (
+    (thesis.check === "$50K" && traction < 700) ||
+    (thesis.check === "$100K" && traction >= 600 && traction < 850) ||
+    (thesis.check === "$150K" && traction >= 750 && traction < 900) ||
+    (thesis.check === "$250K+" && traction >= 850)
+  ) {
+    fit += 3;
+    why.push(`traction aligns with ${thesis.check} check`);
+  }
   return { fit, why };
 }
 
