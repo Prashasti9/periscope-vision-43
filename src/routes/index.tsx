@@ -1556,6 +1556,54 @@ function LivePipelineView() {
                 {c.companies}
               </div>
             )}
+            {(c.founder_score || c.momentum.length > 0) && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  marginBottom: 10,
+                  padding: "8px 10px",
+                  background: C.paper,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 8,
+                }}
+              >
+                {c.founder_score && (
+                  <>
+                    <span
+                      style={{
+                        fontFamily: C.disp,
+                        fontSize: 22,
+                        fontWeight: 600,
+                        color: C.ink,
+                      }}
+                    >
+                      {c.founder_score.value}
+                    </span>
+                    <span
+                      style={{ fontFamily: C.mono, fontSize: 10, color: C.inkSoft }}
+                    >
+                      composite · range {c.founder_score.low}–{c.founder_score.high} ·{" "}
+                      trend {c.founder_score.trend}
+                    </span>
+                  </>
+                )}
+                {c.momentum.length > 1 && <Spark data={c.momentum} />}
+                {c.scored_at && (
+                  <span
+                    style={{
+                      fontFamily: C.mono,
+                      fontSize: 10,
+                      color: C.inkSoft,
+                      marginLeft: "auto",
+                    }}
+                  >
+                    scored {new Date(c.scored_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            )}
             <div
               style={{
                 display: "grid",
