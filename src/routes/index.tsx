@@ -1283,15 +1283,9 @@ function ThesisView({
 function SourcingView({
   founders,
   onOpen,
-  onActivate,
-  outreach,
-  outreachBusy,
 }: {
   founders: Founder[];
   onOpen: (f: Founder) => void;
-  onActivate: (f: Founder) => void;
-  outreach: { founder: Founder; text: string } | null;
-  outreachBusy: boolean;
 }) {
   return (
     <div>
@@ -1301,6 +1295,8 @@ function SourcingView({
       <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
         Inbound applications and outbound scans (GitHub, launches, hackathons, papers,
         accelerators) are scored identically and converge into the same screening step.
+        Outbound activation now lives next to real ingested candidates in the{" "}
+        <b>Pipeline</b> tab, not on the seeded demo founders below.
       </p>
       <LiveSignalsPanel />
       {founders.map((f) => (
@@ -1344,42 +1340,7 @@ function SourcingView({
             >
               Open dossier
             </button>
-            {f.track === "outbound" && (
-              <button
-                onClick={() => onActivate(f)}
-                disabled={outreachBusy}
-                style={{
-                  fontSize: 12,
-                  padding: "6px 12px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: C.sea,
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  fontFamily: C.body,
-                }}
-              >
-                {outreachBusy ? "Drafting…" : "Activate → draft outreach"}
-              </button>
-            )}
           </div>
-          {outreach && outreach.founder.id === f.id && (
-            <pre
-              style={{
-                marginTop: 10,
-                padding: 12,
-                background: C.seaSoft,
-                borderRadius: 8,
-                fontFamily: C.mono,
-                fontSize: 12,
-                color: C.ink,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {outreach.text}
-            </pre>
-          )}
         </div>
       ))}
     </div>
