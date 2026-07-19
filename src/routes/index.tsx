@@ -2484,6 +2484,8 @@ type SignalRow = {
 function LiveSignalsPanel() {
   const ingest = useServerFn(runIngest);
   const scoreFn = useServerFn(scoreCandidate);
+  const getSignalsFn = useServerFn(getSignals);
+  const getCandidatesFn = useServerFn(getPeopleCandidates);
   const [rows, setRows] = useState<SignalRow[]>([]);
   const [candidates, setCandidates] = useState<
     Array<{
@@ -2524,27 +2526,20 @@ function LiveSignalsPanel() {
   );
 
   const load = useCallback(async () => {
-    let q = supabase
-      .from("signals" as never)
-      .select("*")
-      .order("date", { ascending: false })
-      .limit(60);
-    if (source !== "all") q = q.eq("source", source);
-    const { data, error } = await q;
-    if (error) {
-      setStatus(`Load failed: ${error.message}`);
+    try {
+      const data = await getSignalsFn({ data: { source, limit: 60 } });
+      setRows(data as unknown as SignalRow[]);
+    } catch (error) {
+      setStatus(`Load failed: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
-    setRows((data ?? []) as unknown as SignalRow[]);
-    const { data: cData, error: cErr } = await supabase
-      .from("people_candidates" as never)
-      .select("*")
-      .order("signal_count", { ascending: false })
-      .limit(200);
-    if (!cErr) {
-      setCandidates((cData ?? []) as unknown as typeof candidates);
+    try {
+      const cData = await getCandidatesFn({ data: { limit: 200 } });
+      setCandidates(cData as unknown as typeof candidates);
+    } catch {
+      /* non-fatal */
     }
-  }, [source]);
+  }, [source, getSignalsFn, getCandidatesFn]);
 
   useEffect(() => {
     load();
