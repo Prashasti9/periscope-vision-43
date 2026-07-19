@@ -1574,7 +1574,7 @@ function LivePipelineView() {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn]);
+  }, [runScore, screenFn, getCandidatesFn]);
 
   return (
     <div>
