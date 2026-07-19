@@ -755,6 +755,8 @@ function Periscope() {
           {!loading && view === "memo" && (
             <MemoView memo={memo} memoBusy={memoBusy} />
           )}
+
+          {!loading && view === "diligence" && <DiligenceView />}
         </div>
       </div>
     </div>
