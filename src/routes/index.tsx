@@ -1845,6 +1845,139 @@ function LivePipelineView() {
                 sources: {result.sources_used.join(", ")}
               </div>
             )}
+            {/* -------- Activate → Converge (outbound only) -------- */}
+            {(() => {
+              const isActivated = Boolean(activated[key] ?? c.activated_at);
+              const draft = drafts[key];
+              const isDrafting = drafting[key];
+              const isConverging = converging[key];
+              const errMsg = activateErr[key];
+              return (
+                <div
+                  style={{
+                    marginTop: 12,
+                    paddingTop: 12,
+                    borderTop: `1px dashed ${C.line}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 10,
+                        color: C.inkSoft,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      Outbound activate
+                    </span>
+                    {isActivated ? (
+                      <>
+                        <Chip tone="sea">activated</Chip>
+                        <span
+                          style={{
+                            fontFamily: C.mono,
+                            fontSize: 10,
+                            color: C.inkSoft,
+                          }}
+                        >
+                          {new Date(
+                            activated[key] ?? c.activated_at ?? "",
+                          ).toLocaleString()}{" "}
+                          · now a founders row (track=outbound), flows through
+                          Screening / Dossier / Memo like an inbound application.
+                        </span>
+                      </>
+                    ) : !draft ? (
+                      <button
+                        onClick={() => draftOutreach(c)}
+                        disabled={isDrafting}
+                        style={{
+                          fontSize: 12,
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: "none",
+                          background: C.sea,
+                          color: "#fff",
+                          cursor: isDrafting ? "wait" : "pointer",
+                          fontFamily: C.body,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {isDrafting ? "Drafting outreach…" : "Activate → draft outreach"}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => confirmActivate(c)}
+                          disabled={isConverging}
+                          style={{
+                            fontSize: 12,
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            background: C.sea,
+                            color: "#fff",
+                            cursor: isConverging ? "wait" : "pointer",
+                            fontFamily: C.body,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {isConverging
+                            ? "Converging into founders…"
+                            : "Mark as activated → converge to founders"}
+                        </button>
+                        <button
+                          onClick={() => draftOutreach(c)}
+                          disabled={isDrafting}
+                          style={{
+                            fontSize: 12,
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: `1px solid ${C.line}`,
+                            background: "#fff",
+                            cursor: isDrafting ? "wait" : "pointer",
+                            fontFamily: C.body,
+                          }}
+                        >
+                          {isDrafting ? "Re-drafting…" : "Re-draft"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {(draft || c.outreach_draft) && (
+                    <pre
+                      style={{
+                        marginTop: 10,
+                        padding: 12,
+                        background: C.seaSoft,
+                        borderRadius: 8,
+                        fontFamily: C.mono,
+                        fontSize: 12,
+                        color: C.ink,
+                        whiteSpace: "pre-wrap",
+                        margin: "10px 0 0 0",
+                      }}
+                    >
+                      {draft ?? c.outreach_draft}
+                    </pre>
+                  )}
+                  {errMsg && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: C.flag }}>
+                      {errMsg}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
       })}
