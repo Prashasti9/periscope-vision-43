@@ -708,14 +708,42 @@ function Periscope() {
           )}
 
           {!loading && view === "pipeline" && (
-            <PipelineView
-              ranked={ranked}
-              onDossier={(f) => {
-                setSelected(f);
-                setView("dossier");
-              }}
-              onMemo={genMemo}
-            />
+            <>
+              <LivePipelineView />
+              <div
+                style={{
+                  margin: "32px 0 16px",
+                  paddingTop: 20,
+                  borderTop: `1px dashed ${C.line}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: C.mono,
+                    fontSize: 10,
+                    color: C.inkSoft,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                    marginBottom: 6,
+                  }}
+                >
+                  Featured examples — fully-diligenced demo profiles
+                </div>
+                <div style={{ fontSize: 12, color: C.inkSoft, marginBottom: 16 }}>
+                  The live Pipeline above runs on real ingested candidates scored in
+                  real time. These six seeded founders keep a fully-populated
+                  dossier/memo path for demoing the end-to-end diligence flow.
+                </div>
+              </div>
+              <PipelineView
+                ranked={ranked}
+                onDossier={(f) => {
+                  setSelected(f);
+                  setView("dossier");
+                }}
+                onMemo={genMemo}
+              />
+            </>
           )}
 
           {!loading && view === "dossier" && selected && (
