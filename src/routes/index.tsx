@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askAI } from "@/lib/periscope-ai.functions";
+import { runIngest } from "@/lib/ingest.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
