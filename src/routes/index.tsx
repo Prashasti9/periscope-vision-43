@@ -9,6 +9,7 @@ import {
   scoreCandidate,
   type CandidateScore,
 } from "@/lib/openai.functions";
+import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
@@ -266,6 +267,330 @@ function ScoreBand({ fs }: { fs: Founder["founderScore"] }) {
       >
         A score is an interval, not a number. The band is what we honestly know.
       </div>
+    </div>
+  );
+}
+
+/* -------- Deep diligence tab -------- */
+function DiligenceView() {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState<DiligenceResult | null>(null);
+  const runDiligence = useServerFn(deepDiligence);
+
+  const run = async () => {
+    if (!name.trim()) {
+      setErr("Enter a founder name.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    setResult(null);
+    try {
+      const r = await runDiligence({ data: { name, company } });
+      setResult(r);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Diligence failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      <h2 style={{ fontFamily: C.disp, fontSize: 28, margin: 0, fontWeight: 600 }}>
+        Deep diligence
+      </h2>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 18 }}>
+        Live web search (Tavily) → evidence saved to <code>real_signals</code> → GPT-4o extracts
+        claims and scores each 0–1 against the retrieved sources. Nothing here is presented as
+        confirmed fact — only <em>retrieved web evidence</em>.
+      </p>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          background: C.card,
+          border: `1px solid ${C.line}`,
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Founder name (required)"
+          style={{
+            flex: "1 1 200px",
+            padding: "9px 12px",
+            fontSize: 13,
+            border: `1px solid ${C.line}`,
+            borderRadius: 8,
+            fontFamily: C.body,
+          }}
+        />
+        <input
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          placeholder="Company (optional)"
+          style={{
+            flex: "1 1 200px",
+            padding: "9px 12px",
+            fontSize: 13,
+            border: `1px solid ${C.line}`,
+            borderRadius: 8,
+            fontFamily: C.body,
+          }}
+        />
+        <button
+          onClick={run}
+          disabled={busy}
+          style={{
+            padding: "9px 18px",
+            fontSize: 13,
+            fontWeight: 600,
+            borderRadius: 8,
+            border: "none",
+            background: busy ? C.inkSoft : C.ink,
+            color: "#fff",
+            cursor: busy ? "wait" : "pointer",
+            fontFamily: C.body,
+          }}
+        >
+          {busy ? "Searching web…" : "Run diligence"}
+        </button>
+      </div>
+
+      {err && (
+        <div
+          style={{
+            background: C.flagSoft,
+            color: C.flag,
+            border: `1px solid ${C.flag}`,
+            borderRadius: 8,
+            padding: 10,
+            fontSize: 12,
+            marginBottom: 12,
+          }}
+        >
+          {err}
+        </div>
+      )}
+
+      {busy && (
+        <div style={{ fontFamily: C.mono, fontSize: 12, color: C.inkSoft, fontStyle: "italic" }}>
+          Retrieving web evidence, saving to real_signals, then extracting claims…
+        </div>
+      )}
+
+      {result && (
+        <div>
+          <div
+            style={{
+              fontFamily: C.mono,
+              fontSize: 10,
+              color: C.inkSoft,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 6,
+            }}
+          >
+            RETRIEVED WEB EVIDENCE — {result.evidence.length} results ·{" "}
+            {result.raw_saved} saved to real_signals · never presented as confirmed fact
+          </div>
+
+          {result.summary && (
+            <div
+              style={{
+                background: C.coolSoft,
+                color: C.cool,
+                borderRadius: 8,
+                padding: 10,
+                fontSize: 12,
+                marginBottom: 14,
+                fontFamily: C.body,
+              }}
+            >
+              {result.summary}
+            </div>
+          )}
+
+          <div
+            style={{
+              background: C.card,
+              border: `1px solid ${C.line}`,
+              borderRadius: 12,
+              padding: 18,
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: C.mono,
+                fontSize: 10,
+                color: C.inkSoft,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 10,
+              }}
+            >
+              CLAIMS — each with Trust Score & source · contradictions flagged in red
+            </div>
+            {result.claims.length === 0 && (
+              <div style={{ fontSize: 12, color: C.inkSoft, fontStyle: "italic" }}>
+                No concrete claims extracted from the retrieved evidence.
+              </div>
+            )}
+            {result.claims.map((c, i) => (
+              <div
+                key={i}
+                style={{
+                  borderLeft: `3px solid ${
+                    c.contradiction ? C.flag : c.trust >= 0.75 ? C.sea : C.amber
+                  }`,
+                  background: c.contradiction ? C.flagSoft : "transparent",
+                  padding: "10px 12px",
+                  marginBottom: 8,
+                  borderRadius: c.contradiction ? 8 : 0,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: c.contradiction ? C.flag : C.ink,
+                    }}
+                  >
+                    {c.claim}
+                  </span>
+                  <TrustDot v={c.trust} />
+                  {c.contradiction && <Chip tone="flag">⚠ contradicted</Chip>}
+                  {c.flag && !c.contradiction && <Chip tone="amber">⚠ {c.flag}</Chip>}
+                </div>
+                {c.evidence && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: C.inkSoft,
+                      marginTop: 4,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {c.evidence}
+                  </div>
+                )}
+                {c.source_url && (
+                  <a
+                    href={c.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: "inline-block",
+                      marginTop: 6,
+                      fontFamily: C.mono,
+                      fontSize: 11,
+                      color: C.sea,
+                      textDecoration: "none",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {c.source_url}
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background: C.card,
+              border: `1px solid ${C.line}`,
+              borderRadius: 12,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: C.mono,
+                fontSize: 10,
+                color: C.inkSoft,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 10,
+              }}
+            >
+              RAW RETRIEVED SOURCES — labeled retrieved web evidence, not confirmed fact
+            </div>
+            {result.evidence.map((e, i) => (
+              <a
+                key={i}
+                href={e.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: "block",
+                  padding: "10px 12px",
+                  borderBottom: `1px solid ${C.line}`,
+                  color: C.ink,
+                  textDecoration: "none",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 3,
+                  }}
+                >
+                  <Chip tone="cool">tavily</Chip>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    {e.title || e.url}
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      fontFamily: C.mono,
+                      fontSize: 10,
+                      color: C.inkSoft,
+                    }}
+                  >
+                    score {e.score.toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: C.inkSoft, lineHeight: 1.5 }}>
+                  {e.content.slice(0, 240)}
+                  {e.content.length > 240 ? "…" : ""}
+                </div>
+                <div
+                  style={{
+                    fontFamily: C.mono,
+                    fontSize: 10,
+                    color: C.sea,
+                    marginTop: 4,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {e.url}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -644,6 +969,7 @@ function Periscope() {
           <NavBtn id="pipeline" label="Pipeline" />
           <NavBtn id="dossier" label="Founder dossier" />
           <NavBtn id="memo" label="Memo" />
+          <NavBtn id="diligence" label="Deep diligence" />
 
           <div
             style={{
@@ -753,6 +1079,8 @@ function Periscope() {
           {!loading && view === "memo" && (
             <MemoView memo={memo} memoBusy={memoBusy} />
           )}
+
+          {!loading && view === "diligence" && <DiligenceView />}
         </div>
       </div>
     </div>

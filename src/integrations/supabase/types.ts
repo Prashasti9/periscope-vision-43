@@ -110,6 +110,48 @@ export type Database = {
         }
         Relationships: []
       }
+      real_signals: {
+        Row: {
+          content: string
+          created_at: string
+          date: string
+          id: string
+          query: string
+          reliability: number
+          score: number
+          source: string
+          subject: string
+          title: string
+          url: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          date?: string
+          id?: string
+          query?: string
+          reliability?: number
+          score?: number
+          source?: string
+          subject?: string
+          title?: string
+          url?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          date?: string
+          id?: string
+          query?: string
+          reliability?: number
+          score?: number
+          source?: string
+          subject?: string
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
       signals: {
         Row: {
           company: string
