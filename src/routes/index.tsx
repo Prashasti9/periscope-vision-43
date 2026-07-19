@@ -1400,10 +1400,35 @@ type SignalRow = {
 
 function LiveSignalsPanel() {
   const ingest = useServerFn(runIngest);
+  const scoreFn = useServerFn(scoreCandidate);
   const [rows, setRows] = useState<SignalRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("all");
+  const [scores, setScores] = useState<Record<string, CandidateScore | { error: string }>>({});
+  const [scoring, setScoring] = useState<Record<string, boolean>>({});
+
+  const normId = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const runScore = useCallback(
+    async (handle: string) => {
+      const key = normId(handle);
+      if (!key) return;
+      setScoring((m) => ({ ...m, [key]: true }));
+      try {
+        const result = await scoreFn({ data: { identityKey: key } });
+        setScores((m) => ({ ...m, [key]: result }));
+      } catch (e) {
+        setScores((m) => ({
+          ...m,
+          [key]: { error: e instanceof Error ? e.message : String(e) },
+        }));
+      } finally {
+        setScoring((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [scoreFn],
+  );
 
   const load = useCallback(async () => {
     let q = supabase
