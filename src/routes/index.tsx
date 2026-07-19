@@ -424,25 +424,21 @@ function Periscope() {
       setMemoBusy(true);
       setMemo(null);
       setView("memo");
-      const record = JSON.stringify({ ...f, momentum: undefined });
       try {
-        const text = await ai({
-          data: {
-            prompt: `Founder record (all evidence, trust scores, flags, and gaps included): ${record}\n\nWrite the investment memo now. Recommendation must be explicit: INVEST $100K / PASS / INVESTIGATE (with the single blocking question).`,
-            system:
-              'You write evidence-backed investment memos for $100K/24-hour decisions. Required sections, in order, using these exact headings: COMPANY SNAPSHOT, INVESTMENT HYPOTHESES, SWOT, PROBLEM & PRODUCT, TRACTION & KPIS, RECOMMENDATION. Rules: every factual claim must reference its evidence ID (e.g. [S-402]) and trust level; any data gap must be flagged verbatim (e.g. "Cap table: not disclosed") — never invented; contradictions must appear in SWOT weaknesses and the recommendation; be as brief as clarity allows — padding counts against you. Plain text, no markdown symbols.',
-          },
-        });
+        const { text } = await memoFn({ data: { founderId: f.id } });
         setMemo({ founder: f, text });
-      } catch {
+      } catch (e) {
         setMemo({
           founder: f,
-          text: "Memo engine unreachable — check connection and retry. All underlying evidence remains available in the dossier tab.",
+          text:
+            "Memo engine unreachable — " +
+            (e instanceof Error ? e.message : String(e)) +
+            "\n\nAll underlying evidence remains available in the dossier tab.",
         });
       }
       setMemoBusy(false);
     },
-    [ai],
+    [memoFn],
   );
 
   const activate = useCallback(
