@@ -9,6 +9,7 @@ import {
   scoreCandidate,
   type CandidateScore,
 } from "@/lib/openai.functions";
+import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
