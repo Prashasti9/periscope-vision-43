@@ -80,6 +80,72 @@ export type Database = {
         }
         Relationships: []
       }
+      people_candidates: {
+        Row: {
+          companies: string
+          identity_key: string
+          person_or_handle: string
+          signal_count: number
+          source_count: number
+          sources: string
+          updated_at: string
+        }
+        Insert: {
+          companies?: string
+          identity_key: string
+          person_or_handle: string
+          signal_count?: number
+          source_count?: number
+          sources?: string
+          updated_at?: string
+        }
+        Update: {
+          companies?: string
+          identity_key?: string
+          person_or_handle?: string
+          signal_count?: number
+          source_count?: number
+          sources?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      signals: {
+        Row: {
+          company: string
+          date: string
+          ingested_at: string
+          person_or_handle: string
+          reliability: number
+          signal_id: string
+          source: string
+          text: string
+          url: string
+        }
+        Insert: {
+          company?: string
+          date?: string
+          ingested_at?: string
+          person_or_handle?: string
+          reliability?: number
+          signal_id: string
+          source: string
+          text?: string
+          url?: string
+        }
+        Update: {
+          company?: string
+          date?: string
+          ingested_at?: string
+          person_or_handle?: string
+          reliability?: number
+          signal_id?: string
+          source?: string
+          text?: string
+          url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
