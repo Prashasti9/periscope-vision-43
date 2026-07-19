@@ -3,7 +3,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { askAI } from "@/lib/periscope-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
-import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
+import {
+  getFounders,
+  getPeopleCandidates,
+  getSignals,
+  getThesisConfig,
+  saveThesisConfig,
+} from "@/lib/data.functions";
+import {
+  DEFAULT_THESIS,
+  thesisFit,
+  ALL_REGIONS,
+  type ThesisConfig,
+  type Risk,
+} from "@/lib/thesis";
 import {
   generateMemo,
   scoreCandidate,
@@ -77,35 +90,14 @@ type Founder = {
   momentum: number[];
 };
 
-const DEFAULT_THESIS = {
-  sectors: ["AI infra", "Applied AI"],
-  stages: ["Pre-seed", "Seed"],
-  geos: "Global",
-  check: 100,
-  ownership: 7,
-  risk: "High — pre-track-record OK",
-};
-
-function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
-  let fit = 0;
-  const why: string[] = [];
-  if (thesis.sectors.includes(f.sector)) {
-    fit += 40;
-    why.push(`sector ∈ thesis (${f.sector})`);
-  } else why.push(`sector outside thesis (${f.sector})`);
-  if (thesis.stages.includes(f.stage)) {
-    fit += 30;
-    why.push(`stage ∈ thesis (${f.stage})`);
-  }
-  const risky = f.founderScore.coldStart;
-  if (risky && thesis.risk.startsWith("High")) {
-    fit += 15;
-    why.push("cold-start allowed by risk appetite");
-  } else if (risky) {
-    why.push("cold-start penalized by risk appetite");
-  } else fit += 10;
-  fit += Math.round((f.founderScore.value / 1000) * 15);
-  return { fit, why };
+function founderToThesisInput(f: Founder) {
+  return {
+    sector: f.sector,
+    stage: f.stage,
+    geo: f.geo,
+    coldStart: f.founderScore.coldStart,
+    founderScore: f.founderScore.value,
+  };
 }
 
 /* -------- Primitives -------- */
