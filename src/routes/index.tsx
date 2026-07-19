@@ -385,7 +385,7 @@ function DiligenceView() {
             fontWeight: 600,
             borderRadius: 8,
             border: "none",
-            background: busy ? C.inkSoft : C.ink,
+            background: busy ? C.inkSoft : C.sea,
             color: "#fff",
             cursor: busy ? "wait" : "pointer",
             fontFamily: C.body,
