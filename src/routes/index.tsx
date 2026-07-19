@@ -2287,6 +2287,22 @@ function PipelineView({
         Founder · Market · Idea-vs-Market are independent. Disagreement between them is
         the signal — collapsing to one number would hide the decision.
       </p>
+      {ranked.length === 0 && (
+        <div
+          style={{
+            background: C.card,
+            border: `1px dashed ${C.line}`,
+            borderRadius: 12,
+            padding: 24,
+            textAlign: "center",
+            fontFamily: C.body,
+            fontSize: 13,
+            color: C.inkSoft,
+          }}
+        >
+          No founders match this thesis — try widening your filters.
+        </div>
+      )}
       {ranked.map(({ f, fit, why }) => {
         const hasContradiction = f.claims.some((c) => c.flag);
         return (
