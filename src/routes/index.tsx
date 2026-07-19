@@ -1402,6 +1402,16 @@ function LiveSignalsPanel() {
   const ingest = useServerFn(runIngest);
   const scoreFn = useServerFn(scoreCandidate);
   const [rows, setRows] = useState<SignalRow[]>([]);
+  const [candidates, setCandidates] = useState<
+    Array<{
+      identity_key: string;
+      person_or_handle: string;
+      sources: string;
+      companies: string;
+      source_count: number;
+      signal_count: number;
+    }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("all");
@@ -1443,6 +1453,14 @@ function LiveSignalsPanel() {
       return;
     }
     setRows((data ?? []) as unknown as SignalRow[]);
+    const { data: cData, error: cErr } = await supabase
+      .from("people_candidates" as never)
+      .select("*")
+      .order("signal_count", { ascending: false })
+      .limit(200);
+    if (!cErr) {
+      setCandidates((cData ?? []) as unknown as typeof candidates);
+    }
   }, [source]);
 
   useEffect(() => {
@@ -1475,6 +1493,18 @@ function LiveSignalsPanel() {
     arxiv: "sea",
     yc: "flag",
   };
+
+  // Prioritize pre-fundraise builders (GH/HN/arXiv) above YC candidates.
+  const isBuilderSource = (sources: string) =>
+    /github|hacker_news|arxiv/i.test(sources);
+  const rankedCandidates = [...candidates]
+    .sort((a, b) => {
+      const ba = isBuilderSource(a.sources) ? 1 : 0;
+      const bb = isBuilderSource(b.sources) ? 1 : 0;
+      if (ba !== bb) return bb - ba;
+      return b.signal_count - a.signal_count;
+    })
+    .slice(0, 20);
 
   return (
     <div
@@ -1541,27 +1571,30 @@ function LiveSignalsPanel() {
           public APIs.
         </div>
       )}
-      {rows.length > 0 && (
+      {rankedCandidates.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft, marginBottom: 6 }}>
-            Score candidates (GPT-4o, evidence-only, 1–10 per axis)
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontFamily: C.disp, fontSize: 14, fontWeight: 600 }}>
+              Live ingested — real public data
+            </span>
+            <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+              people_candidates · builders (GH/HN/arXiv) prioritized above YC · sorted by
+              signal_count · GPT-4o scoring
+            </span>
           </div>
           <div style={{ display: "grid", gap: 6 }}>
-            {Array.from(
-              rows.reduce((m, s) => {
-                if (!s.person_or_handle) return m;
-                const k = normId(s.person_or_handle);
-                if (!m.has(k)) m.set(k, s.person_or_handle);
-                return m;
-              }, new Map<string, string>()),
-            )
-              .slice(0, 12)
-              .map(([key, handle]) => {
-                const result = scores[key];
-                const busy = scoring[key];
-                return (
-                  <div
-                    key={key}
+            {rankedCandidates.map((c) => {
+              const key = c.identity_key;
+              const handle = c.person_or_handle;
+              const result = scores[key];
+              const busy = scoring[key];
+              const srcList = c.sources
+                .split(";")
+                .map((x) => x.trim())
+                .filter(Boolean);
+              return (
+                <div
+                  key={key}
                     style={{
                       border: `1px solid ${C.line}`,
                       borderRadius: 8,
@@ -1569,8 +1602,17 @@ function LiveSignalsPanel() {
                       background: "#fff",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <Chip tone="cool">people candidate</Chip>
                       <span style={{ fontFamily: C.mono, fontSize: 12 }}>@{handle}</span>
+                      {srcList.map((s) => (
+                        <Chip key={s} tone={sourceTone[s] ?? "sea"}>
+                          {s}
+                        </Chip>
+                      ))}
+                      <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
+                        {c.signal_count} signals · {c.source_count} sources
+                      </span>
                       <button
                         onClick={() => runScore(handle)}
                         disabled={busy}
@@ -1590,6 +1632,18 @@ function LiveSignalsPanel() {
                         {busy ? "Scoring…" : result ? "Rescore" : "Score candidate"}
                       </button>
                     </div>
+                    {c.companies && (
+                      <div
+                        style={{
+                          fontFamily: C.mono,
+                          fontSize: 10,
+                          color: C.inkSoft,
+                          marginTop: 4,
+                        }}
+                      >
+                        {c.companies}
+                      </div>
+                    )}
                     {result && "error" in result && (
                       <div style={{ marginTop: 6, fontSize: 12, color: C.flag }}>
                         {result.error}
@@ -1660,7 +1714,7 @@ function LiveSignalsPanel() {
                     )}
                   </div>
                 );
-              })}
+            })}
           </div>
         </div>
       )}
