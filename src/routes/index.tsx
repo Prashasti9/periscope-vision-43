@@ -1117,7 +1117,7 @@ function Periscope() {
 
           {!loading && view === "pipeline" && (
             <>
-              <LivePipelineView />
+              <LivePipelineView thesis={thesis} />
               <div
                 style={{
                   margin: "32px 0 16px",
