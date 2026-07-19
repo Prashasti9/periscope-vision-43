@@ -80,11 +80,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Founder Compass — the VC brain that sees founders before they surface" },
       { name: "description", content: "Evidence-backed VC deal-sourcing dashboard: thesis engine, three-axis pipeline, founder dossier, and memo generation." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Founder Compass — the VC brain" },
-      { property: "og:description", content: "Evidence-backed VC deal-sourcing dashboard." },
+      { property: "og:title", content: "Founder Compass — the VC brain that sees founders before they surface" },
+      { property: "og:description", content: "Evidence-backed VC deal-sourcing dashboard: thesis engine, three-axis pipeline, founder dossier, and memo generation." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Founder Compass — the VC brain that sees founders before they surface" },
+      { name: "twitter:description", content: "Evidence-backed VC deal-sourcing dashboard: thesis engine, three-axis pipeline, founder dossier, and memo generation." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0695fd4f-032f-46c9-9da3-48ab41ce7ec5/id-preview-ec17860b--94d26278-185f-4986-823d-1e4ac3b3d0f6.lovable.app-1784449783319.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0695fd4f-032f-46c9-9da3-48ab41ce7ec5/id-preview-ec17860b--94d26278-185f-4986-823d-1e4ac3b3d0f6.lovable.app-1784449783319.png" },
     ],
     links: [
       {
