@@ -1452,6 +1452,63 @@ function LivePipelineView() {
     [scoreFn],
   );
 
+  const draftOutreach = useCallback(
+    async (c: PeopleCandidate) => {
+      const key = c.identity_key;
+      setDrafting((m) => ({ ...m, [key]: true }));
+      setActivateErr((m) => ({ ...m, [key]: "" }));
+      try {
+        const text = await aiFn({
+          data: {
+            prompt: `Handle: @${c.person_or_handle}. Public sources: ${c.sources}. Companies/repos inferred: ${c.companies || "(none)"}. Signal count: ${c.signal_count}. Draft a 90-word cold outreach email from an investor. Reference the SPECIFIC public work (repo, paper, post) that triggered this. Goal: get them to submit an application (deck + company name). Tone: peer-to-peer, zero flattery-spam. Plain text.`,
+            system:
+              "You write outreach that converts builders into applicants. Cold outreach, not cold investment.",
+          },
+        });
+        setDrafts((m) => ({ ...m, [key]: text }));
+      } catch (e) {
+        setActivateErr((m) => ({
+          ...m,
+          [key]: "Draft engine unreachable — " + (e instanceof Error ? e.message : String(e)),
+        }));
+      } finally {
+        setDrafting((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [aiFn],
+  );
+
+  const confirmActivate = useCallback(
+    async (c: PeopleCandidate) => {
+      const key = c.identity_key;
+      const draft = drafts[key];
+      if (!draft) return;
+      setConverging((m) => ({ ...m, [key]: true }));
+      setActivateErr((m) => ({ ...m, [key]: "" }));
+      try {
+        const r = await convergeFn({
+          data: { identityKey: key, outreachDraft: draft },
+        });
+        setActivated((m) => ({ ...m, [key]: r.activatedAt }));
+        setCandidates((rows) =>
+          rows.map((row) =>
+            row.identity_key === key
+              ? { ...row, activated_at: r.activatedAt, outreach_draft: draft }
+              : row,
+          ),
+        );
+      } catch (e) {
+        setActivateErr((m) => ({
+          ...m,
+          [key]: "Converge failed — " + (e instanceof Error ? e.message : String(e)),
+        }));
+      } finally {
+        setConverging((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [convergeFn, drafts],
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
