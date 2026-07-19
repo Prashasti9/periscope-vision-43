@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { askAI } from "@/lib/periscope-ai.functions";
+import { askAI } from "@/lib/founder-compass-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
 import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
 import {
@@ -17,11 +17,11 @@ import { scoreFounder } from "@/lib/openai.functions";
 import { toDisplayAxes } from "@/lib/adapters";
 
 export const Route = createFileRoute("/")({
-  component: Periscope,
+  component: FounderCompass,
 });
 
 /* ============================================================
-   PERISCOPE — The VC brain that sees founders before they surface
+   FOUNDER COMPASS — The VC brain that sees founders before they surface
    Design tokens: dossier-meets-terminal.
    ============================================================ */
 
@@ -746,7 +746,7 @@ function rowToFounder(r: any): Founder {
 }
 
 /* -------- Main app -------- */
-function Periscope() {
+function FounderCompass() {
   const [founders, setFounders] = useState<Founder[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("pipeline");
@@ -935,7 +935,7 @@ function Periscope() {
       >
         <div>
           <div style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600, lineHeight: 1 }}>
-            Periscope
+            Founder Compass
           </div>
           <div
             style={{

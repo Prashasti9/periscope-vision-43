@@ -1,4 +1,4 @@
-# Periscope ingestion demo
+# Founder Compass ingestion demo
 
 This is a real-data base layer for the VC-sourcing challenge. It ingests public signals from GitHub, Hacker News, arXiv, and the `yc-oss` company-data mirror, retaining a source URL for every row.
 
