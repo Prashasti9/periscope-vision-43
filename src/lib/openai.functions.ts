@@ -131,12 +131,82 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       (s) => normalizeIdentity(s.person_or_handle) === data.identityKey,
     );
 
+    // --- Auto-run Deep Diligence: fetch web evidence via Tavily, persist to
+    // real_signals, then feed both raw signals AND web evidence into the scorer
+    // so market / idea-vs-market axes have something to reason from.
+    const subject = candidate.person_or_handle;
+    const companyHint = (candidate.companies ?? "")
+      .split(/[,;|]/)
+      .map((x) => x.trim())
+      .filter(Boolean)[0] ?? "";
+    const query = `${subject} ${companyHint} founder startup market`.replace(/\s+/g, " ").trim();
+
+    type WebEvidence = { title: string; url: string; content: string; score: number };
+    let webEvidence: WebEvidence[] = [];
+
+    const tavilyKey = process.env.TAVILY_API_KEY;
+    if (tavilyKey) {
+      try {
+        const tavRes = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tavilyKey}`,
+          },
+          body: JSON.stringify({
+            query,
+            search_depth: "advanced",
+            max_results: 6,
+            include_raw_content: true,
+          }),
+        });
+        if (tavRes.ok) {
+          const tavJson = (await tavRes.json()) as {
+            results?: Array<{
+              title?: string;
+              url?: string;
+              content?: string;
+              raw_content?: string;
+              score?: number;
+            }>;
+          };
+          webEvidence = (tavJson.results ?? []).map((r) => ({
+            title: r.title ?? "",
+            url: r.url ?? "",
+            content: (r.content ?? r.raw_content ?? "").slice(0, 3000),
+            score: typeof r.score === "number" ? r.score : 0,
+          }));
+
+          if (webEvidence.length) {
+            const today = new Date().toISOString().slice(0, 10);
+            await supabaseAdmin.from("real_signals").insert(
+              webEvidence.map((e) => ({
+                source: "tavily",
+                subject,
+                query,
+                title: e.title,
+                url: e.url,
+                content: e.content,
+                score: e.score,
+                reliability: 0.7,
+                date: today,
+              })),
+            );
+          }
+        }
+      } catch {
+        // Non-fatal: fall back to scoring on raw signals alone.
+        webEvidence = [];
+      }
+    }
+
     const system =
       "You are an evidence-first VC scorer. Score three independent axes for a candidate, " +
-      "each on a 1–10 integer scale, using ONLY the cited signals below. " +
+      "each on a 1–10 integer scale, using ONLY the cited raw signals AND retrieved web evidence below. " +
       "If evidence for an axis is thin, absent, or contradictory, mark it unscorable=true " +
       "with score=null and reason starting 'unscorable — flagged: ...'. " +
       "Never invent facts, metrics, or affiliations. Cite signal_ids inline like [signal_id]. " +
+      "For web evidence, cite the source URL inline in parentheses (e.g. (example.com)). " +
       "Reasons must be ONE sentence. Return STRICT JSON only, no prose, no backticks. " +
       "Schema: {\"founder\":{\"score\":int|null,\"reason\":str,\"unscorable\":bool}," +
       "\"market\":{...},\"idea_vs_market\":{...},\"sources_used\":[str]}. " +
@@ -161,6 +231,13 @@ export const scoreCandidate = createServerFn({ method: "POST" })
         company: s.company,
         date: s.date,
         reliability: s.reliability,
+      })),
+      web_evidence: webEvidence.map((e, i) => ({
+        idx: `W-${i}`,
+        title: e.title,
+        url: e.url,
+        relevance: e.score,
+        content: e.content,
       })),
     };
 
