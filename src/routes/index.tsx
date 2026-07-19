@@ -8,6 +8,7 @@ import {
   generateMemo,
   scoreCandidate,
   screenCandidate,
+  classifyCandidate,
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
@@ -107,6 +108,53 @@ function thesisMatches(
   const geoOk =
     !item.geo || thesis.geos.length === 0 || thesis.geos.includes(item.geo);
   return sectorOk && stageOk && geoOk;
+}
+
+/* parseCheck / parseOwnership: turn the dropdown strings into
+   numeric thesis targets for the outbound candidate filter.
+   "$50K" → 50, "$250K+" → 250; "3-5%" → midpoint 4. */
+function parseCheckK(s: string): number {
+  const m = s.match(/(\d+)/);
+  return m ? Number(m[1]) : 100;
+}
+function parseOwnershipPct(s: string): number {
+  const m = s.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+  if (m) return (Number(m[1]) + Number(m[2])) / 2;
+  const one = s.match(/(\d+(?:\.\d+)?)/);
+  return one ? Number(one[1]) : 4;
+}
+
+/* candidateMatchesThesis: outbound-only, stricter filter that
+   additionally checks check_ask / ownership_ask and risk (cold
+   start). Every clause treats null/unknown as a pass — a
+   candidate is only excluded when a field IS populated and it
+   conflicts with the thesis. Never excluded for missing data. */
+function candidateMatchesThesis(
+  c: {
+    sector?: string | null;
+    stage?: string | null;
+    geo?: string | null;
+    checkAsk?: number | null;
+    ownershipAsk?: number | null;
+    founder_score?: { coldStart?: boolean } | null;
+  },
+  thesis: typeof DEFAULT_THESIS,
+) {
+  const sectorOk =
+    !c.sector || thesis.sectors.length === 0 || thesis.sectors.includes(c.sector);
+  const stageOk =
+    !c.stage || thesis.stages.length === 0 || thesis.stages.includes(c.stage);
+  const geoOk =
+    !c.geo || thesis.geos.length === 0 || thesis.geos.includes(c.geo);
+  const targetCheck = parseCheckK(thesis.check);
+  const checkOk =
+    c.checkAsk == null || Math.abs(c.checkAsk - targetCheck) <= targetCheck * 0.5;
+  const targetOwnership = parseOwnershipPct(thesis.ownership);
+  const ownershipOk =
+    c.ownershipAsk == null || Math.abs(c.ownershipAsk - targetOwnership) <= 3;
+  const coldStart = c.founder_score?.coldStart;
+  const riskOk = coldStart == null || !coldStart || thesis.risk.startsWith("High");
+  return sectorOk && stageOk && geoOk && checkOk && ownershipOk && riskOk;
 }
 
 function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
@@ -1593,11 +1641,14 @@ type PeopleCandidate = {
   sector: string | null;
   stage: string | null;
   geo: string | null;
+  checkAsk: number | null;
+  ownershipAsk: number | null;
 };
 
 function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
+  const classifyFn = useServerFn(classifyCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const getCandidatesFn = useServerFn(getPeopleCandidates);
@@ -1643,8 +1694,33 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
       } finally {
         setScoring((m) => ({ ...m, [key]: false }));
       }
+      // Classify sector / stage / geo / checkAsk / ownershipAsk in
+      // parallel with the score render — cheap SCREEN_MODEL call,
+      // fully isolated: any failure is swallowed so it never blocks
+      // the score UI. Updates the local row so the thesis filter
+      // reacts immediately without needing a page reload.
+      classifyFn({ data: { identityKey: key } })
+        .then((cls) => {
+          setCandidates((rows) =>
+            rows.map((row) =>
+              row.identity_key === key
+                ? {
+                    ...row,
+                    sector: cls.sector,
+                    stage: cls.stage,
+                    geo: cls.geo,
+                    checkAsk: cls.checkAsk,
+                    ownershipAsk: cls.ownershipAsk,
+                  }
+                : row,
+            ),
+          );
+        })
+        .catch(() => {
+          /* classifier is best-effort — never surface to user */
+        });
     },
-    [scoreFn],
+    [scoreFn, classifyFn],
   );
 
   const draftOutreach = useCallback(
@@ -1717,7 +1793,16 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         return;
       }
       if (cancelled) return;
-      const rows = ((data ?? []) as unknown as PeopleCandidate[])
+      type RawRow = Omit<PeopleCandidate, "checkAsk" | "ownershipAsk"> & {
+        check_ask?: number | null;
+        ownership_ask?: number | null;
+      };
+      const rows: PeopleCandidate[] = ((data ?? []) as unknown as RawRow[])
+        .map((r) => ({
+          ...r,
+          checkAsk: r.check_ask ?? null,
+          ownershipAsk: r.ownership_ask ?? null,
+        }))
         .sort((a, b) => {
           const ba = isBuilderSource(a.sources) ? 1 : 0;
           const bb = isBuilderSource(b.sources) ? 1 : 0;
@@ -1825,7 +1910,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         const passingScreen = candidates.filter(
           (c) => screened[c.identity_key]?.pass !== false,
         );
-        const matching = passingScreen.filter((c) => thesisMatches(c, thesis));
+        const matching = passingScreen.filter((c) => candidateMatchesThesis(c, thesis));
         if (candidates.length === 0) return null;
         return (
           <div
@@ -1842,7 +1927,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
       })()}
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
-        .filter((c) => thesisMatches(c, thesis))
+        .filter((c) => candidateMatchesThesis(c, thesis))
         .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
@@ -2309,7 +2394,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         const offThesis = candidates.filter(
           (c) =>
             screened[c.identity_key]?.pass !== false &&
-            !thesisMatches(c, thesis),
+            !candidateMatchesThesis(c, thesis),
         );
         if (offThesis.length === 0) return null;
         return (
