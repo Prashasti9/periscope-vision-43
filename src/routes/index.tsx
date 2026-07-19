@@ -645,6 +645,7 @@ function Periscope() {
           <NavBtn id="pipeline" label="Pipeline" />
           <NavBtn id="dossier" label="Founder dossier" />
           <NavBtn id="memo" label="Memo" />
+          <NavBtn id="diligence" label="Deep diligence" />
 
           <div
             style={{
