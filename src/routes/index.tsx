@@ -3261,7 +3261,25 @@ function ApplyModal({
             </div>
             <div>
               <label style={label}>Deck (PDF, up to 20 MB)</label>
-              <input type="file" accept="application/pdf" onChange={(e) => setDeckFile(e.target.files?.[0] ?? null)} />
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 12px",
+                  background: "#F1F3F2",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setDeckFile(e.target.files?.[0] ?? null)}
+                  style={{ cursor: "pointer" }}
+                />
+              </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
