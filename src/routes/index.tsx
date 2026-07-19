@@ -1597,7 +1597,9 @@ function LivePipelineView() {
           <b>Refresh live signals</b> to ingest from public APIs.
         </div>
       )}
-      {candidates.map((c) => {
+      {candidates
+        .filter((c) => screened[c.identity_key]?.pass !== false)
+        .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
         const busy = scoring[key];
@@ -1969,6 +1971,96 @@ function LivePipelineView() {
           </div>
         );
       })}
+      {(() => {
+        const rejected = candidates.filter(
+          (c) => screened[c.identity_key]?.pass === false,
+        );
+        if (rejected.length === 0) return null;
+        return (
+          <div style={{ marginTop: 24 }}>
+            <button
+              onClick={() => setShowRejected((v) => !v)}
+              style={{
+                fontFamily: C.mono,
+                fontSize: 11,
+                color: C.inkSoft,
+                background: "transparent",
+                border: `1px dashed ${C.line}`,
+                borderRadius: 8,
+                padding: "6px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {showRejected ? "▾" : "▸"} Not advanced — {rejected.length}{" "}
+              screened out by pre-screen gate
+            </button>
+            {showRejected && (
+              <div style={{ marginTop: 10 }}>
+                {rejected.map((c) => {
+                  const s = screened[c.identity_key];
+                  return (
+                    <div
+                      key={c.identity_key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "8px 12px",
+                        background: C.paper,
+                        border: `1px solid ${C.line}`,
+                        borderRadius: 8,
+                        marginBottom: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      <Chip tone="amber">screened out</Chip>
+                      <span
+                        style={{ fontFamily: C.disp, fontWeight: 600 }}
+                      >
+                        @{c.person_or_handle}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: C.mono,
+                          fontSize: 10,
+                          color: C.inkSoft,
+                        }}
+                      >
+                        {c.sources}
+                      </span>
+                      <span style={{ color: C.inkSoft, marginLeft: "auto" }}>
+                        {s?.reason || "disqualified"}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setScreened((m) => {
+                            const n = { ...m };
+                            delete n[c.identity_key];
+                            return n;
+                          });
+                          runScore(c.identity_key);
+                        }}
+                        style={{
+                          fontSize: 11,
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${C.sea}`,
+                          background: "#fff",
+                          color: C.sea,
+                          cursor: "pointer",
+                          fontFamily: C.body,
+                        }}
+                      >
+                        Override & score
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
