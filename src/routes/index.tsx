@@ -25,11 +25,12 @@ export const Route = createFileRoute("/")({
    ============================================================ */
 
 const C = {
-  ink: "#0F2230",
-  inkSoft: "#3D5566",
-  paper: "#F4F6F5",
+  ink: "#1A2B33",
+  inkSoft: "#5C6F78",
+  paper: "#F7F8F7",
+  petrol: "#12242E",
   card: "#FFFFFF",
-  line: "#DDE4E2",
+  line: "#E3E8E6",
   sea: "#0E7C66",
   seaSoft: "#E3F2EE",
   amber: "#B26A0E",
