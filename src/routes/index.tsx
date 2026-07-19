@@ -836,11 +836,12 @@ function Periscope() {
         border: "none",
         cursor: "pointer",
         background: view === id ? C.card : "transparent",
-        color: view === id ? C.ink : "#B9C9C4",
+        color: view === id ? C.ink : C.ink,
         fontFamily: C.body,
         fontSize: 13,
-        fontWeight: view === id ? 600 : 400,
+        fontWeight: view === id ? 600 : 500,
         borderRadius: 8,
+        borderLeft: view === id ? `3px solid ${C.sea}` : "3px solid transparent",
         marginBottom: 2,
       }}
     >
