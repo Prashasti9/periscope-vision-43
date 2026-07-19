@@ -57,8 +57,7 @@ export const getThesisConfig = createServerFn({ method: "GET" }).handler(
   async (): Promise<ThesisConfig> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
-      // @ts-expect-error thesis_config not yet in generated types
-      .from("thesis_config")
+      .from("thesis_config" as never)
       .select("*")
       .eq("id", "default")
       .maybeSingle();
@@ -98,8 +97,7 @@ export const saveThesisConfig = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin
-      // @ts-expect-error thesis_config not yet in generated types
-      .from("thesis_config")
+      .from("thesis_config" as never)
       .upsert({
         id: "default",
         sectors: data.sectors,
@@ -110,7 +108,7 @@ export const saveThesisConfig = createServerFn({ method: "POST" })
         ownership_target: data.ownership_target,
         risk: data.risk,
         updated_at: new Date().toISOString(),
-      });
+      } as never);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
