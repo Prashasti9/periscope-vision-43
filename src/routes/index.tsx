@@ -1641,6 +1641,8 @@ type PeopleCandidate = {
   sector: string | null;
   stage: string | null;
   geo: string | null;
+  checkAsk: number | null;
+  ownershipAsk: number | null;
 };
 
 function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
