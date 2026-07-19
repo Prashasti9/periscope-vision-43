@@ -294,3 +294,132 @@ export const enrichCandidate = createServerFn({ method: "POST" })
       evidence_count: evidenceCount,
     };
   });
+
+/* enrichFounder — same enrichment path but keyed off a founders.id.
+   Uses real_signals (subject=`founder:<id>`) as the evidence cache and
+   runs a Tavily search based on the founder's name + company. Cold-start
+   by construction (inbound applications have no builder signals yet). */
+
+export const enrichFounder = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => {
+    const v = input as { founderId?: unknown };
+    if (typeof v?.founderId !== "string" || !v.founderId)
+      throw new Error("founderId required");
+    return { founderId: v.founderId };
+  })
+  .handler(async ({ data }): Promise<EnrichmentResult> => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: founder, error: fErr } = await supabaseAdmin
+      .from("founders")
+      .select("*")
+      .eq("id", data.founderId)
+      .maybeSingle();
+    if (fErr) throw new Error(`DB: ${fErr.message}`);
+    if (!founder) throw new Error("Founder not found");
+
+    const subject = `founder:${founder.id}`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Cached real_signals (deck seed + prior Tavily results).
+    const { data: cachedReal } = await supabaseAdmin
+      .from("real_signals")
+      .select("*")
+      .eq("subject", subject)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    let webEvidence: EnrichedWebEvidence[] = (cachedReal ?? []).map((r, i) => ({
+      idx: `W-${i}`,
+      title: r.title,
+      url: r.url,
+      content: (r.content ?? "").slice(0, 3000),
+      score: Number(r.score) || 0,
+      reliability: Number(r.reliability) || 0.7,
+      date: r.date,
+    }));
+
+    const alreadyRanTavilyToday = (cachedReal ?? []).some(
+      (r) => r.source === "tavily" && r.date === today,
+    );
+
+    const tavilyKey = process.env.TAVILY_API_KEY;
+    const query = `${founder.name} ${founder.company} founder`
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!alreadyRanTavilyToday && tavilyKey) {
+      try {
+        const tavRes = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tavilyKey}`,
+          },
+          body: JSON.stringify({
+            query,
+            search_depth: "advanced",
+            max_results: 8,
+            include_raw_content: true,
+          }),
+        });
+        if (tavRes.ok) {
+          const tavJson = (await tavRes.json()) as {
+            results?: Array<{
+              title?: string;
+              url?: string;
+              content?: string;
+              raw_content?: string;
+              score?: number;
+            }>;
+          };
+          const fresh: EnrichedWebEvidence[] = (tavJson.results ?? []).map(
+            (r, i) => ({
+              idx: `W-new-${i}`,
+              title: r.title ?? "",
+              url: r.url ?? "",
+              content: (r.content ?? r.raw_content ?? "").slice(0, 3000),
+              score: typeof r.score === "number" ? r.score : 0,
+              reliability: 0.7,
+              date: today,
+            }),
+          );
+          if (fresh.length) {
+            await supabaseAdmin.from("real_signals").insert(
+              fresh.map((e) => ({
+                source: "tavily",
+                subject,
+                query,
+                title: e.title,
+                url: e.url,
+                content: e.content,
+                score: e.score,
+                reliability: e.reliability,
+                date: today,
+              })),
+            );
+            webEvidence = [...fresh, ...webEvidence];
+          }
+        }
+      } catch (e) {
+        console.warn("tavily founder enrichment failed:", e);
+      }
+    }
+
+    const signals: EnrichedSignal[] = [];
+    const evidenceCount = signals.length + webEvidence.length;
+    const relSum = webEvidence.reduce((a, w) => a + (w.reliability || 0), 0);
+    const avgReliability = evidenceCount > 0 ? relSum / evidenceCount : 0;
+
+    return {
+      identity_key: subject,
+      person_or_handle: founder.name,
+      companies: founder.company,
+      cold_start: true,
+      signals,
+      github_profile: null,
+      web_evidence: webEvidence,
+      avg_reliability: avgReliability,
+      evidence_count: evidenceCount,
+    };
+  });
