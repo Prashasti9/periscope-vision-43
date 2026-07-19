@@ -1613,6 +1613,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
     Record<string, { pass: boolean; reason: string }>
   >({});
   const [showRejected, setShowRejected] = useState(false);
+  const [showOffThesis, setShowOffThesis] = useState(false);
   // Outreach draft state, keyed by identity_key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [drafting, setDrafting] = useState<Record<string, boolean>>({});
