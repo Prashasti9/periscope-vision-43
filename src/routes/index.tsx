@@ -2547,3 +2547,230 @@ function LiveSignalsPanel() {
     </div>
   );
 }
+
+/* -------- Apply modal (inbound intake) -------- */
+type ApplyPayload = {
+  company: string;
+  oneLiner: string;
+  founderName: string;
+  stage: string;
+  sector: string;
+  geo: string;
+  links: { github?: string; linkedin?: string; site?: string };
+  deckBase64?: string;
+  deckFilename?: string;
+};
+
+function ApplyModal({
+  onClose,
+  submit,
+}: {
+  onClose: () => void;
+  submit: (p: ApplyPayload) => Promise<{ id: string; deckUrl: string | null }>;
+}) {
+  const [company, setCompany] = useState("");
+  const [oneLiner, setOneLiner] = useState("");
+  const [founderName, setFounderName] = useState("");
+  const [stage, setStage] = useState("Pre-seed");
+  const [sector, setSector] = useState("Applied AI");
+  const [geo, setGeo] = useState("Global");
+  const [github, setGithub] = useState("");
+  const [linkedin, setLinkedin] = useState("");
+  const [site, setSite] = useState("");
+  const [deckFile, setDeckFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<{ id: string } | null>(null);
+
+  const fileToBase64 = (f: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = String(r.result ?? "");
+        resolve(s.slice(s.indexOf(",") + 1));
+      };
+      r.onerror = reject;
+      r.readAsDataURL(f);
+    });
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    if (!company.trim() || !founderName.trim()) {
+      setErr("Company and founder name are required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      let deckBase64: string | undefined;
+      let deckFilename: string | undefined;
+      if (deckFile) {
+        if (deckFile.type !== "application/pdf") {
+          throw new Error("Deck must be a PDF.");
+        }
+        if (deckFile.size > 20 * 1024 * 1024) {
+          throw new Error("Deck exceeds 20 MB.");
+        }
+        deckBase64 = await fileToBase64(deckFile);
+        deckFilename = deckFile.name;
+      }
+      const res = await submit({
+        company,
+        oneLiner,
+        founderName,
+        stage,
+        sector,
+        geo,
+        links: {
+          github: github.trim() || undefined,
+          linkedin: linkedin.trim() || undefined,
+          site: site.trim() || undefined,
+        },
+        deckBase64,
+        deckFilename,
+      });
+      setDone({ id: res.id });
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : String(e2));
+    }
+    setBusy(false);
+  };
+
+  const label: React.CSSProperties = {
+    fontFamily: C.mono,
+    fontSize: 10,
+    color: C.inkSoft,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    display: "block",
+  };
+  const input: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 6,
+    border: `1px solid ${C.line}`,
+    fontFamily: C.body,
+    fontSize: 13,
+    background: "#fff",
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,34,48,0.55)",
+        zIndex: 100,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: "60px 20px 20px",
+        overflowY: "auto",
+      }}
+    >
+      <form
+        onSubmit={onSubmit}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.card,
+          borderRadius: 12,
+          maxWidth: 640,
+          width: "100%",
+          padding: 28,
+          boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+          <h2 style={{ fontFamily: C.disp, fontSize: 26, margin: 0, fontWeight: 600 }}>
+            Apply — inbound intake
+          </h2>
+          <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: C.inkSoft }}>×</button>
+        </div>
+        <p style={{ color: C.inkSoft, fontSize: 12, marginTop: 4, marginBottom: 20, fontFamily: C.mono }}>
+          Deck + company name is the minimum bar. Everything else improves your scoring evidence.
+        </p>
+
+        {done ? (
+          <div style={{ background: C.seaSoft, color: C.sea, padding: 14, borderRadius: 8, fontSize: 13 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Application received.</div>
+            <div style={{ fontFamily: C.mono, fontSize: 11 }}>id: {done.id}</div>
+            <div style={{ marginTop: 8 }}>Screening enrichment + AI scoring are running now. Your card will appear in the Pipeline momentarily.</div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ marginTop: 12, padding: "8px 14px", borderRadius: 6, border: "none", background: C.sea, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <label style={label}>Company *</label>
+              <input style={input} value={company} onChange={(e) => setCompany(e.target.value)} maxLength={120} required />
+            </div>
+            <div>
+              <label style={label}>Founder name(s) *</label>
+              <input style={input} value={founderName} onChange={(e) => setFounderName(e.target.value)} maxLength={200} required />
+            </div>
+            <div>
+              <label style={label}>One-liner</label>
+              <input style={input} value={oneLiner} onChange={(e) => setOneLiner(e.target.value)} maxLength={240} placeholder="What are you building, in one sentence?" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={label}>Stage</label>
+                <select style={input} value={stage} onChange={(e) => setStage(e.target.value)}>
+                  {["Pre-seed", "Seed"].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={label}>Sector</label>
+                <select style={input} value={sector} onChange={(e) => setSector(e.target.value)}>
+                  {["AI infra", "Applied AI", "AI x Bio"].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={label}>Geo</label>
+                <input style={input} value={geo} onChange={(e) => setGeo(e.target.value)} maxLength={60} />
+              </div>
+            </div>
+            <div>
+              <label style={label}>Deck (PDF, up to 20 MB)</label>
+              <input type="file" accept="application/pdf" onChange={(e) => setDeckFile(e.target.files?.[0] ?? null)} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={label}>GitHub (optional)</label>
+                <input style={input} value={github} onChange={(e) => setGithub(e.target.value)} placeholder="https://github.com/…" />
+              </div>
+              <div>
+                <label style={label}>LinkedIn (optional)</label>
+                <input style={input} value={linkedin} onChange={(e) => setLinkedin(e.target.value)} placeholder="https://linkedin.com/in/…" />
+              </div>
+            </div>
+            <div>
+              <label style={label}>Website (optional)</label>
+              <input style={input} value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://…" />
+            </div>
+
+            {err && (
+              <div style={{ background: C.flagSoft, color: C.flag, padding: 10, borderRadius: 6, fontSize: 12, fontFamily: C.mono }}>
+                {err}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+              <button type="button" onClick={onClose} style={{ padding: "9px 16px", borderRadius: 6, border: `1px solid ${C.line}`, background: "#fff", cursor: "pointer", fontSize: 12 }}>Cancel</button>
+              <button type="submit" disabled={busy} style={{ padding: "9px 18px", borderRadius: 6, border: "none", background: C.sea, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                {busy ? "Submitting…" : "Submit application"}
+              </button>
+            </div>
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
