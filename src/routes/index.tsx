@@ -1165,142 +1165,188 @@ function Periscope() {
 function ThesisView({
   thesis,
   setThesis,
+  founders,
+  matchCount,
 }: {
   thesis: typeof DEFAULT_THESIS;
   setThesis: React.Dispatch<React.SetStateAction<typeof DEFAULT_THESIS>>;
+  founders: Founder[];
+  matchCount: number;
 }) {
+  const distinct = (key: "sector" | "stage" | "geo") =>
+    Array.from(new Set(founders.map((f) => f[key]).filter(Boolean))).sort();
+  const sectorOpts = distinct("sector");
+  const stageOpts = distinct("stage");
+  const geoOpts = distinct("geo");
+
+  const toggle = (
+    field: "sectors" | "stages" | "geos",
+    value: string,
+  ) =>
+    setThesis((t) => ({
+      ...t,
+      [field]: t[field].includes(value)
+        ? t[field].filter((x) => x !== value)
+        : [...t[field], value],
+    }));
+
+  const resetFilters = () =>
+    setThesis({
+      sectors: sectorOpts,
+      stages: stageOpts,
+      geos: geoOpts,
+      check: "$100K",
+      ownership: "3-5%",
+      risk: "High — pre-track-record OK",
+    });
+
+  const labelStyle: React.CSSProperties = {
+    fontFamily: C.mono,
+    fontSize: 10,
+    color: C.inkSoft,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    display: "block",
+  };
+  const selectStyle: React.CSSProperties = {
+    fontSize: 12,
+    padding: "6px 8px",
+    borderRadius: 6,
+    border: `1px solid ${C.line}`,
+    background: C.card,
+    fontFamily: C.body,
+    color: C.ink,
+    minWidth: 140,
+  };
+
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div>
       <h2 style={{ fontFamily: C.disp, fontSize: 30, margin: 0, fontWeight: 600 }}>
         Thesis Engine
       </h2>
-      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 24 }}>
+      <p style={{ color: C.inkSoft, fontSize: 13, marginTop: 6, marginBottom: 20 }}>
         Every recommendation downstream is filtered and scored through this lens. Change
         it and watch the pipeline re-rank.
       </p>
+
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 16,
+          background: C.card,
+          border: `1px solid ${C.line}`,
+          borderRadius: 12,
+          padding: 14,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 14,
+          alignItems: "flex-end",
         }}
       >
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
-            }}
+        <MultiSelectDropdown
+          label="Sector"
+          options={sectorOpts}
+          selected={thesis.sectors}
+          onToggle={(v) => toggle("sectors", v)}
+          labelStyle={labelStyle}
+          triggerStyle={selectStyle}
+        />
+        <MultiSelectDropdown
+          label="Stage"
+          options={stageOpts}
+          selected={thesis.stages}
+          onToggle={(v) => toggle("stages", v)}
+          labelStyle={labelStyle}
+          triggerStyle={selectStyle}
+        />
+        <MultiSelectDropdown
+          label="Geography"
+          options={geoOpts}
+          selected={thesis.geos}
+          onToggle={(v) => toggle("geos", v)}
+          labelStyle={labelStyle}
+          triggerStyle={selectStyle}
+        />
+        <div>
+          <span style={labelStyle}>Check size</span>
+          <select
+            value={thesis.check}
+            onChange={(e) => setThesis((t) => ({ ...t, check: e.target.value }))}
+            style={selectStyle}
           >
-            SECTORS
-          </div>
-          {["AI infra", "Applied AI", "AI x Bio"].map((s) => (
-            <label
-              key={s}
-              style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
-            >
-              <input
-                type="checkbox"
-                checked={thesis.sectors.includes(s)}
-                onChange={() =>
-                  setThesis((t) => ({
-                    ...t,
-                    sectors: t.sectors.includes(s)
-                      ? t.sectors.filter((x) => x !== s)
-                      : [...t.sectors, s],
-                  }))
-                }
-              />{" "}
-              {s}
-            </label>
-          ))}
+            {CHECK_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
         </div>
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
-            }}
+        <div>
+          <span style={labelStyle}>Ownership target</span>
+          <select
+            value={thesis.ownership}
+            onChange={(e) => setThesis((t) => ({ ...t, ownership: e.target.value }))}
+            style={selectStyle}
           >
-            STAGES
-          </div>
-          {["Pre-seed", "Seed"].map((s) => (
-            <label
-              key={s}
-              style={{ display: "block", fontSize: 13, marginBottom: 6, cursor: "pointer" }}
-            >
-              <input
-                type="checkbox"
-                checked={thesis.stages.includes(s)}
-                onChange={() =>
-                  setThesis((t) => ({
-                    ...t,
-                    stages: t.stages.includes(s)
-                      ? t.stages.filter((x) => x !== s)
-                      : [...t.stages, s],
-                  }))
-                }
-              />{" "}
-              {s}
-            </label>
-          ))}
+            {OWNERSHIP_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
         </div>
-        <div style={{ background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.line}` }}>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 10,
-            }}
-          >
-            CHECK / OWNERSHIP
-          </div>
-          <div style={{ fontFamily: C.disp, fontSize: 18, marginBottom: 12 }}>
-            ${thesis.check}K · target {thesis.ownership}%
-          </div>
-          <div
-            style={{
-              fontFamily: C.mono,
-              fontSize: 10,
-              color: C.inkSoft,
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              marginBottom: 6,
-            }}
-          >
-            RISK APPETITE
-          </div>
+        <div>
+          <span style={labelStyle}>Risk appetite</span>
           <select
             value={thesis.risk}
             onChange={(e) => setThesis((t) => ({ ...t, risk: e.target.value }))}
-            style={{
-              fontSize: 13,
-              padding: 6,
-              borderRadius: 6,
-              border: `1px solid ${C.line}`,
-              width: "100%",
-              fontFamily: C.body,
-            }}
+            style={selectStyle}
           >
-            <option>High — pre-track-record OK</option>
-            <option>Moderate — prefer track record</option>
+            {RISK_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
           </select>
         </div>
+
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: C.mono,
+              fontSize: 11,
+              color: C.inkSoft,
+            }}
+          >
+            {matchCount} of {founders.length} founders match
+          </span>
+          <button
+            onClick={resetFilters}
+            style={{
+              fontFamily: C.mono,
+              fontSize: 11,
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: `1px solid ${C.line}`,
+              background: "transparent",
+              color: C.ink,
+              cursor: "pointer",
+            }}
+          >
+            Reset filters
+          </button>
+        </div>
       </div>
+
       <div
         style={{
-          marginTop: 20,
+          marginTop: 16,
           fontSize: 12,
           color: C.inkSoft,
           fontStyle: "italic",
@@ -1310,6 +1356,132 @@ function ThesisView({
         Fit scoring is transparent — open any pipeline card to see exactly why it
         ranked where it did.
       </div>
+    </div>
+  );
+}
+
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onToggle,
+  labelStyle,
+  triggerStyle,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (v: string) => void;
+  labelStyle: React.CSSProperties;
+  triggerStyle: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const count = selected.length;
+  const displayLabel =
+    count === 0
+      ? "All"
+      : count === 1
+        ? selected[0]
+        : `${count} selected`;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <span style={labelStyle}>
+        {label}
+        {count > 1 ? ` (${count})` : ""}
+      </span>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          ...triggerStyle,
+          textAlign: "left",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 160,
+          }}
+        >
+          {displayLabel}
+        </span>
+        <span style={{ fontFamily: C.mono, fontSize: 10, color: C.inkSoft }}>▾</span>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            zIndex: 30,
+            background: C.card,
+            border: `1px solid ${C.line}`,
+            borderRadius: 8,
+            padding: 6,
+            minWidth: 180,
+            maxHeight: 240,
+            overflowY: "auto",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.08)",
+          }}
+        >
+          {options.length === 0 && (
+            <div
+              style={{
+                fontSize: 12,
+                color: C.inkSoft,
+                padding: 6,
+                fontFamily: C.body,
+              }}
+            >
+              No options
+            </div>
+          )}
+          {options.map((o) => {
+            const checked = selected.includes(o);
+            return (
+              <label
+                key={o}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  padding: "4px 6px",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  fontFamily: C.body,
+                  color: C.ink,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(o)}
+                />
+                {o}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
