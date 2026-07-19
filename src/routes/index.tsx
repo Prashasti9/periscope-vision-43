@@ -944,7 +944,7 @@ function FounderCompass() {
             style={{
               fontFamily: C.mono,
               fontSize: 10,
-              color: "#8FAFA4",
+              color: C.gold,
               letterSpacing: 0.5,
               marginTop: 2,
               textTransform: "uppercase",
@@ -968,7 +968,7 @@ function FounderCompass() {
               border: "none",
               fontFamily: C.mono,
               fontSize: 12,
-              background: "#1C3444",
+              background: C.petrolLight,
               color: "#fff",
             }}
           />
@@ -979,8 +979,8 @@ function FounderCompass() {
               padding: "10px 16px",
               borderRadius: 8,
               border: "none",
-              background: C.sea,
-              color: "#fff",
+              background: C.gold,
+              color: C.ink,
               fontFamily: C.body,
               fontSize: 12,
               fontWeight: 600,
@@ -994,7 +994,7 @@ function FounderCompass() {
             style={{
               padding: "10px 16px",
               borderRadius: 8,
-              border: `1px solid ${C.sea}`,
+              border: `1px solid ${C.gold}`,
               background: "transparent",
               color: "#fff",
               fontFamily: C.body,
