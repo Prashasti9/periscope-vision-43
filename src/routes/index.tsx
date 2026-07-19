@@ -680,21 +680,22 @@ function Periscope() {
   const memoFn = useServerFn(generateMemo);
   const applyFn = useServerFn(submitApplication);
   const scoreFounderFn = useServerFn(scoreFounder);
+  const getFoundersFn = useServerFn(getFounders);
   const [applyOpen, setApplyOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("founders" as any)
-        .select("*")
-        .order("sort_order", { ascending: true });
-      if (cancelled) return;
-      if (error) {
+      let data: any[] = [];
+      try {
+        data = await getFoundersFn();
+      } catch (error) {
+        if (cancelled) return;
         console.error(error);
         setLoading(false);
         return;
       }
+      if (cancelled) return;
       const list = (data ?? []).map(rowToFounder);
       setFounders(list);
       if (list[1]) setSelected(list[1]);
@@ -704,7 +705,7 @@ function Periscope() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [getFoundersFn]);
 
   const ranked = useMemo(
     () =>
@@ -921,11 +922,12 @@ function Periscope() {
           submit={async (payload) => {
             const res = await applyFn({ data: payload });
             // Refresh founders list so the new inbound row appears.
-            const { data } = await supabase
-              .from("founders" as any)
-              .select("*")
-              .order("sort_order", { ascending: true });
-            setFounders((data ?? []).map(rowToFounder));
+            try {
+              const data = await getFoundersFn();
+              setFounders((data ?? []).map(rowToFounder));
+            } catch (e) {
+              console.error(e);
+            }
             // Fire-and-forget scoring; UI will pick up updates on next load.
             scoreFounderFn({ data: { founderId: res.id } }).catch(() => {});
             return res;
