@@ -133,6 +133,12 @@ function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
   return { fit, why };
 }
 
+function thesisToText(t: typeof DEFAULT_THESIS) {
+  return `Sectors: ${t.sectors.join(", ") || "any"}. ` +
+    `Stages: ${t.stages.join(", ") || "any"}. ` +
+    `Geography: ${t.geos.join(", ") || "any"}. Risk appetite: ${t.risk}.`;
+}
+
 /* -------- Primitives -------- */
 function Chip({
   tone = "cool",
@@ -1111,7 +1117,7 @@ function Periscope() {
 
           {!loading && view === "pipeline" && (
             <>
-              <LivePipelineView />
+              <LivePipelineView thesis={thesis} />
               <div
                 style={{
                   margin: "32px 0 16px",
@@ -1578,7 +1584,7 @@ type PeopleCandidate = {
   outreach_draft: string | null;
 };
 
-function LivePipelineView() {
+function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
@@ -1757,7 +1763,7 @@ function LivePipelineView() {
                   .filter(Boolean)
                   .join("\n");
                 try {
-                  const s = await screenFn({ data: { text, thesis: "" } });
+                  const s = await screenFn({ data: { text, thesis: thesisToText(thesis) } });
                   setScreened((m) => ({ ...m, [c.identity_key]: s }));
                   if (!s.pass) return; // skip expensive scoring
                 } catch {
@@ -1778,7 +1784,7 @@ function LivePipelineView() {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn, getCandidatesFn]);
+  }, [runScore, screenFn, getCandidatesFn, thesis]);
 
   return (
     <div>
