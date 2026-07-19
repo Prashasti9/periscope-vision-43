@@ -1033,7 +1033,7 @@ function Periscope() {
         <div
           style={{
             width: 220,
-            background: C.petrol,
+            background: "#EEF1F0",
             padding: "16px 10px",
             flexShrink: 0,
           }}
