@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o";
+const SCREEN_MODEL = "gpt-4o-mini";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
