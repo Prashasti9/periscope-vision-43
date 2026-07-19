@@ -1454,7 +1454,7 @@ type PeopleCandidate = {
   outreach_draft: string | null;
 };
 
-function LivePipelineView() {
+function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
@@ -1682,6 +1682,23 @@ function LivePipelineView() {
       {candidates
         .filter((c) => screened[c.identity_key]?.pass !== false)
         .map((c) => {
+          const fs = c.founder_score;
+          const trace = thesisFit(
+            {
+              // people_candidates rows have no structured sector/stage/geo — they
+              // stay "unknown → neutral" until enrichment fills them in.
+              sector: null,
+              stage: null,
+              geo: null,
+              coldStart: fs ? Boolean(fs.coldStart) : true,
+              founderScore: fs?.value ?? null,
+            },
+            thesis,
+          );
+          return { c, trace };
+        })
+        .sort((a, b) => b.trace.fit - a.trace.fit)
+        .map(({ c, trace }) => {
         const key = c.identity_key;
         const result = scores[key];
         const busy = scoring[key];
@@ -1728,6 +1745,16 @@ function LivePipelineView() {
               ))}
               <span style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft }}>
                 {c.signal_count} signals · {c.source_count} sources
+              </span>
+              <span
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  color: C.ink,
+                  marginLeft: 8,
+                }}
+              >
+                thesis fit {trace.fit}/100
               </span>
               <button
                 onClick={() => runScore(key)}
