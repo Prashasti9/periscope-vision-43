@@ -12,6 +12,7 @@ import {
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
 import { submitApplication, convergeCandidate } from "@/lib/application.functions";
 import { scoreFounder } from "@/lib/openai.functions";
+import { toDisplayAxes } from "@/lib/adapters";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
