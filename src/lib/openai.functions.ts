@@ -190,6 +190,9 @@ export type CandidateScore = {
   market: AxisScore;
   idea_vs_market: AxisScore;
   sources_used: string[];
+  sector: string | null;
+  stage: string | null;
+  geo: string | null;
 };
 
 export const scoreCandidate = createServerFn({ method: "POST" })
