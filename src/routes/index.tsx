@@ -1541,6 +1541,17 @@ function LivePipelineView() {
       if (Object.keys(seeded).length > 0) {
         setScores((m) => ({ ...seeded, ...m }));
       }
+      // Seed activation state + outreach drafts from persisted columns.
+      const seedActivated: Record<string, string> = {};
+      const seedDrafts: Record<string, string> = {};
+      for (const r of rows) {
+        if (r.activated_at) seedActivated[r.identity_key] = r.activated_at;
+        if (r.outreach_draft) seedDrafts[r.identity_key] = r.outreach_draft;
+      }
+      if (Object.keys(seedActivated).length > 0)
+        setActivated((m) => ({ ...seedActivated, ...m }));
+      if (Object.keys(seedDrafts).length > 0)
+        setDrafts((m) => ({ ...seedDrafts, ...m }));
       // Only score rows whose scored_at is null or older than 7 days.
       const staleMs = 7 * 24 * 60 * 60 * 1000;
       const now = Date.now();
