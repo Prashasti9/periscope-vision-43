@@ -4,6 +4,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askAI } from "@/lib/periscope-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
+import {
+  generateMemo,
+  scoreCandidate,
+  type CandidateScore,
+} from "@/lib/openai.functions";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
@@ -339,6 +344,7 @@ function Periscope() {
   const [outreachBusy, setOutreachBusy] = useState(false);
 
   const ai = useServerFn(askAI);
+  const memoFn = useServerFn(generateMemo);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,25 +424,21 @@ function Periscope() {
       setMemoBusy(true);
       setMemo(null);
       setView("memo");
-      const record = JSON.stringify({ ...f, momentum: undefined });
       try {
-        const text = await ai({
-          data: {
-            prompt: `Founder record (all evidence, trust scores, flags, and gaps included): ${record}\n\nWrite the investment memo now. Recommendation must be explicit: INVEST $100K / PASS / INVESTIGATE (with the single blocking question).`,
-            system:
-              'You write evidence-backed investment memos for $100K/24-hour decisions. Required sections, in order, using these exact headings: COMPANY SNAPSHOT, INVESTMENT HYPOTHESES, SWOT, PROBLEM & PRODUCT, TRACTION & KPIS, RECOMMENDATION. Rules: every factual claim must reference its evidence ID (e.g. [S-402]) and trust level; any data gap must be flagged verbatim (e.g. "Cap table: not disclosed") — never invented; contradictions must appear in SWOT weaknesses and the recommendation; be as brief as clarity allows — padding counts against you. Plain text, no markdown symbols.',
-          },
-        });
+        const { text } = await memoFn({ data: { founderId: f.id } });
         setMemo({ founder: f, text });
-      } catch {
+      } catch (e) {
         setMemo({
           founder: f,
-          text: "Memo engine unreachable — check connection and retry. All underlying evidence remains available in the dossier tab.",
+          text:
+            "Memo engine unreachable — " +
+            (e instanceof Error ? e.message : String(e)) +
+            "\n\nAll underlying evidence remains available in the dossier tab.",
         });
       }
       setMemoBusy(false);
     },
-    [ai],
+    [memoFn],
   );
 
   const activate = useCallback(
@@ -1398,10 +1400,35 @@ type SignalRow = {
 
 function LiveSignalsPanel() {
   const ingest = useServerFn(runIngest);
+  const scoreFn = useServerFn(scoreCandidate);
   const [rows, setRows] = useState<SignalRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [source, setSource] = useState<string>("all");
+  const [scores, setScores] = useState<Record<string, CandidateScore | { error: string }>>({});
+  const [scoring, setScoring] = useState<Record<string, boolean>>({});
+
+  const normId = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const runScore = useCallback(
+    async (handle: string) => {
+      const key = normId(handle);
+      if (!key) return;
+      setScoring((m) => ({ ...m, [key]: true }));
+      try {
+        const result = await scoreFn({ data: { identityKey: key } });
+        setScores((m) => ({ ...m, [key]: result }));
+      } catch (e) {
+        setScores((m) => ({
+          ...m,
+          [key]: { error: e instanceof Error ? e.message : String(e) },
+        }));
+      } finally {
+        setScoring((m) => ({ ...m, [key]: false }));
+      }
+    },
+    [scoreFn],
+  );
 
   const load = useCallback(async () => {
     let q = supabase
@@ -1512,6 +1539,129 @@ function LiveSignalsPanel() {
         <div style={{ fontSize: 13, color: C.inkSoft }}>
           No signals yet. Click <b>Refresh live signals</b> to pull the last 90 days from
           public APIs.
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: C.mono, fontSize: 11, color: C.inkSoft, marginBottom: 6 }}>
+            Score candidates (GPT-4o, evidence-only, 1–10 per axis)
+          </div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {Array.from(
+              rows.reduce((m, s) => {
+                if (!s.person_or_handle) return m;
+                const k = normId(s.person_or_handle);
+                if (!m.has(k)) m.set(k, s.person_or_handle);
+                return m;
+              }, new Map<string, string>()),
+            )
+              .slice(0, 12)
+              .map(([key, handle]) => {
+                const result = scores[key];
+                const busy = scoring[key];
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 8,
+                      padding: 8,
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: C.mono, fontSize: 12 }}>@{handle}</span>
+                      <button
+                        onClick={() => runScore(handle)}
+                        disabled={busy}
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 11,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${C.sea}`,
+                          background: busy ? C.seaSoft : "#fff",
+                          color: C.sea,
+                          cursor: busy ? "wait" : "pointer",
+                          fontFamily: C.body,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {busy ? "Scoring…" : result ? "Rescore" : "Score candidate"}
+                      </button>
+                    </div>
+                    {result && "error" in result && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: C.flag }}>
+                        {result.error}
+                      </div>
+                    )}
+                    {result && !("error" in result) && (
+                      <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                        {(
+                          [
+                            ["Founder", result.founder],
+                            ["Market", result.market],
+                            ["Idea vs Market", result.idea_vs_market],
+                          ] as const
+                        ).map(([label, ax]) => (
+                          <div
+                            key={label}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "flex-start",
+                              fontSize: 12,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: C.mono,
+                                width: 110,
+                                color: C.inkSoft,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {label}
+                            </span>
+                            {ax.unscorable ? (
+                              <Chip tone="amber">unscorable — flagged</Chip>
+                            ) : (
+                              <span
+                                style={{
+                                  fontFamily: C.disp,
+                                  fontSize: 15,
+                                  fontWeight: 600,
+                                  color: C.sea,
+                                  width: 32,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {ax.score}/10
+                              </span>
+                            )}
+                            <span style={{ color: C.ink, lineHeight: 1.4 }}>
+                              {ax.reason}
+                            </span>
+                          </div>
+                        ))}
+                        {result.sources_used.length > 0 && (
+                          <div
+                            style={{
+                              fontFamily: C.mono,
+                              fontSize: 10,
+                              color: C.inkSoft,
+                              marginTop: 4,
+                            }}
+                          >
+                            sources: {result.sources_used.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
       <div style={{ display: "grid", gap: 8 }}>
