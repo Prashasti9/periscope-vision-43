@@ -10,7 +10,7 @@ import {
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
-import { submitApplication } from "@/lib/application.functions";
+import { submitApplication, convergeCandidate } from "@/lib/application.functions";
 import { scoreFounder } from "@/lib/openai.functions";
 
 export const Route = createFileRoute("/")({
