@@ -53,13 +53,6 @@ async function callOpenAI(body: unknown): Promise<string> {
 }
 
 /* =========================================================
-   generateMemo: takes a founderId, loads the row, asks GPT-4o
-   for an evidence-cited investment memo with fixed sections.
-   Returns { text } — plain text with section headings the
-   existing MemoView renders as-is.
-   ========================================================= */
-
-/* =========================================================
    screenCandidate: cheap pre-screen gate before the full
    scoreCandidate call. Uses gpt-4o-mini to reject only clear
    disqualifiers (no usable text at all, spam/irrelevant repo,
@@ -124,6 +117,12 @@ export const screenCandidate = createServerFn({ method: "POST" })
     }
   });
 
+/* =========================================================
+   generateMemo: takes a founderId, loads the row, asks GPT-4o
+   for an evidence-cited investment memo with fixed sections.
+   Returns { text } — plain text with section headings the
+   existing MemoView renders as-is.
+   ========================================================= */
 export const generateMemo = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => {
     const v = input as { founderId?: unknown };
