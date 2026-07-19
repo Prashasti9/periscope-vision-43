@@ -725,9 +725,9 @@ function Periscope() {
       oneLiner: f.oneLiner,
       founderScore: f.founderScore.value,
       axes: {
-        founder: f.axes.founder.score,
-        market: f.axes.market.score,
-        ideaVsMarket: f.axes.ideaVsMarket.score,
+        founder: f.axes?.founder?.score ?? null,
+        market: f.axes?.market?.score ?? null,
+        ideaVsMarket: f.axes?.ideaVsMarket?.score ?? null,
       },
     }));
     try {
@@ -2008,9 +2008,9 @@ function PipelineView({
             >
               {(
                 [
-                  ["Founder", f.axes.founder],
-                  ["Market", f.axes.market],
-                  ["Idea vs Market", f.axes.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown }).idea_vs_market],
+                  ["Founder", f.axes?.founder],
+                  ["Market", f.axes?.market],
+                  ["Idea vs Market", f.axes?.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown } | undefined)?.idea_vs_market],
                 ] as const
               ).map(([label, axRaw]) => {
                 const ax = (axRaw ?? { score: null, trend: null, note: "unscorable — flagged: no data", rating: null }) as {
