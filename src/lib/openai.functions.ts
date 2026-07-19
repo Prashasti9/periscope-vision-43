@@ -199,7 +199,7 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       };
     };
 
-    return {
+    const result: CandidateScore = {
       founder: clean(parsed.founder),
       market: clean(parsed.market),
       idea_vs_market: clean(parsed.idea_vs_market),
@@ -207,4 +207,82 @@ export const scoreCandidate = createServerFn({ method: "POST" })
         ? parsed.sources_used.filter((x): x is string => typeof x === "string")
         : [],
     };
+
+    // Composite founder_score: weighted rollup of the three axes.
+    // Skip null (unscorable) axes — don't average across unscorable ones.
+    // Weights: founder 0.5, market 0.3, idea_vs_market 0.2 (renormalized
+    // across whichever axes actually have a score).
+    const weights: Array<[keyof CandidateScore, number]> = [
+      ["founder", 0.5],
+      ["market", 0.3],
+      ["idea_vs_market", 0.2],
+    ];
+    let wSum = 0;
+    let vSum = 0;
+    let lowSum = 0;
+    let highSum = 0;
+    for (const [k, w] of weights) {
+      const ax = result[k] as AxisScore;
+      if (!ax || ax.unscorable || ax.score == null) continue;
+      wSum += w;
+      vSum += ax.score * w;
+      lowSum += (ax.low ?? ax.score) * w;
+      highSum += (ax.high ?? ax.score) * w;
+    }
+    const composite = wSum > 0
+      ? {
+          value: round1(vSum / wSum),
+          low: round1(lowSum / wSum),
+          high: round1(highSum / wSum),
+        }
+      : null;
+
+    // Persist onto the people_candidates row: merge axes, append composite
+    // value to momentum (cap 10), set scored_at = now(). Non-fatal on error.
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: existing } = await supabaseAdmin
+        .from("people_candidates")
+        .select("momentum, founder_score")
+        .eq("identity_key", data.identityKey)
+        .maybeSingle();
+      const prevMomentum = Array.isArray((existing as { momentum?: unknown } | null)?.momentum)
+        ? ((existing as { momentum: unknown[] }).momentum as number[])
+        : [];
+      const prevFs = (existing as { founder_score?: { value?: number } | null } | null)?.founder_score ?? null;
+      const nextMomentum =
+        composite != null
+          ? [...prevMomentum, composite.value].slice(-10)
+          : prevMomentum;
+      const trend =
+        composite && prevFs && typeof prevFs.value === "number"
+          ? composite.value > prevFs.value
+            ? "up"
+            : composite.value < prevFs.value
+              ? "down"
+              : "flat"
+          : "flat";
+      const founderScoreRow = composite
+        ? {
+            value: composite.value,
+            low: composite.low,
+            high: composite.high,
+            trend,
+            coldStart: enriched.cold_start,
+          }
+        : null;
+      await supabaseAdmin
+        .from("people_candidates")
+        .update({
+          axes: result as unknown as never,
+          founder_score: founderScoreRow as unknown as never,
+          momentum: nextMomentum as unknown as never,
+          scored_at: new Date().toISOString(),
+        })
+        .eq("identity_key", data.identityKey);
+    } catch {
+      // persistence is best-effort — never fail the score call
+    }
+
+    return result;
   });
