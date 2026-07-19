@@ -631,6 +631,10 @@ function Evidence({ s }: { s: Founder["signals"][number] }) {
 
 /* -------- Row → Founder mapping -------- */
 function rowToFounder(r: any): Founder {
+  // Normalize axes through the single adapter so legacy rows that stored a
+  // raw CandidateScore (snake_case idea_vs_market, no trend field) render
+  // correctly instead of TypeError'ing on ax.trend and blanking the page.
+  const axes = toDisplayAxes(r.axes, `founder:${r?.id ?? "(unknown)"}`);
   return {
     id: r.id,
     name: r.name,
@@ -644,7 +648,7 @@ function rowToFounder(r: any): Founder {
     priorVC: r.prior_vc,
     tags: r.tags ?? [],
     founderScore: r.founder_score,
-    axes: r.axes,
+    axes: axes as unknown as Founder["axes"],
     signals: r.signals ?? [],
     claims: r.claims ?? [],
     gaps: r.gaps ?? [],
