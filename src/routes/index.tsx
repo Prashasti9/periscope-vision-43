@@ -2305,6 +2305,71 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
           </div>
         );
       })()}
+      {(() => {
+        const offThesis = candidates.filter(
+          (c) =>
+            screened[c.identity_key]?.pass !== false &&
+            !thesisMatches(c, thesis),
+        );
+        if (offThesis.length === 0) return null;
+        return (
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={() => setShowOffThesis((v) => !v)}
+              style={{
+                fontFamily: C.mono,
+                fontSize: 11,
+                color: C.inkSoft,
+                background: "transparent",
+                border: `1px dashed ${C.line}`,
+                borderRadius: 8,
+                padding: "6px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {showOffThesis ? "▾" : "▸"} Outside current thesis — {offThesis.length}
+            </button>
+            {showOffThesis && (
+              <div style={{ marginTop: 10 }}>
+                {offThesis.map((c) => (
+                  <div
+                    key={c.identity_key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      background: C.paper,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 8,
+                      marginBottom: 6,
+                      fontSize: 12,
+                    }}
+                  >
+                    <Chip tone="cool">off-thesis</Chip>
+                    <span style={{ fontFamily: C.disp, fontWeight: 600 }}>
+                      @{c.person_or_handle}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: C.mono,
+                        fontSize: 10,
+                        color: C.inkSoft,
+                      }}
+                    >
+                      {[c.sector, c.stage, c.geo].filter(Boolean).join(" · ") ||
+                        "unclassified"}
+                    </span>
+                    <span style={{ color: C.inkSoft, marginLeft: "auto" }}>
+                      {c.sources}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
