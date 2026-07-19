@@ -1944,6 +1944,45 @@ function LivePipelineView({ thesis }: { thesis: ThesisConfig }) {
                 sources: {result.sources_used.join(", ")}
               </div>
             )}
+            {trace.ownershipFlag && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  color: C.amber,
+                  fontFamily: C.mono,
+                }}
+              >
+                ⚠ {trace.ownershipFlag}
+              </div>
+            )}
+            <details style={{ marginTop: 10 }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontFamily: C.mono,
+                  fontSize: 10,
+                  color: C.inkSoft,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                }}
+              >
+                why this rank (thesis trace)
+              </summary>
+              <div
+                style={{
+                  fontFamily: C.mono,
+                  fontSize: 11,
+                  color: C.inkSoft,
+                  marginTop: 6,
+                  lineHeight: 1.6,
+                }}
+              >
+                {trace.why.map((w, i) => (
+                  <div key={i}>· {w}</div>
+                ))}
+              </div>
+            </details>
             {/* -------- Activate → Converge (outbound only) -------- */}
             {(() => {
               const isActivated = Boolean(activated[key] ?? c.activated_at);
