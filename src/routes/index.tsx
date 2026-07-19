@@ -905,6 +905,7 @@ function SourcingView({
         Inbound applications and outbound scans (GitHub, launches, hackathons, papers,
         accelerators) are scored identically and converge into the same screening step.
       </p>
+      <LiveSignalsPanel />
       {founders.map((f) => (
         <div
           key={f.id}
