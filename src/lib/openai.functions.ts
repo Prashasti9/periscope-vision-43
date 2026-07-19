@@ -305,6 +305,10 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       stage: null,
       geo: null,
     };
+    // Note: sector/stage/geo classification is done by the separate,
+    // cheap `classifyCandidate` server fn (below) — kept out of this
+    // expensive scoring path so classification never adds latency/cost
+    // to a full score call.
 
     // Composite founder_score: weighted rollup of the three axes.
     // Skip null (unscorable) axes — don't average across unscorable ones.
@@ -334,45 +338,6 @@ export const scoreCandidate = createServerFn({ method: "POST" })
           high: round1(highSum / wSum),
         }
       : null;
-
-    // Second, cheaper pass: classify sector / stage / geo from the SAME
-    // evidence already gathered. Model is instructed to return null when
-    // evidence is weak — we never guess these fields.
-    try {
-      const classifySystem =
-        "You classify a candidate's sector, stage, and geography from the " +
-        "SAME public evidence used for scoring (GitHub profile, retrieved " +
-        "web evidence, raw signals). Rules: if the evidence does NOT " +
-        "clearly support a confident classification for a field, return " +
-        "null for that field. Do NOT infer from weak signal, do not guess. " +
-        "Return STRICT JSON: {\"sector\": string|null, \"stage\": string|null, \"geo\": string|null}. " +
-        "sector examples: 'AI infra', 'Applied AI', 'Devtools', 'Fintech', 'Bio', 'Consumer'. " +
-        "stage examples: 'Pre-seed', 'Seed', 'Series A'. " +
-        "geo examples: 'SF Bay', 'NYC', 'London', 'Berlin', 'Remote'.";
-      const classifyRaw = await callOpenAI({
-        model: SCREEN_MODEL,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: classifySystem },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-      });
-      const c = JSON.parse(classifyRaw) as {
-        sector?: unknown;
-        stage?: unknown;
-        geo?: unknown;
-      };
-      const norm = (v: unknown): string | null =>
-        typeof v === "string" && v.trim() && v.trim().toLowerCase() !== "null"
-          ? v.trim()
-          : null;
-      result.sector = norm(c.sector);
-      result.stage = norm(c.stage);
-      result.geo = norm(c.geo);
-    } catch {
-      // classification is best-effort — leave nulls on failure
-    }
 
     // Persist onto the people_candidates row: merge axes, append composite
     // value to momentum (cap 10), set scored_at = now(). Non-fatal on error.
