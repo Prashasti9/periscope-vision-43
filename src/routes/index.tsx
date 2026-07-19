@@ -1410,6 +1410,8 @@ type PeopleCandidate = {
 
 function LivePipelineView() {
   const scoreFn = useServerFn(scoreCandidate);
+  const aiFn = useServerFn(askAI);
+  const convergeFn = useServerFn(convergeCandidate);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1417,6 +1419,12 @@ function LivePipelineView() {
     Record<string, CandidateScore | { error: string }>
   >({});
   const [scoring, setScoring] = useState<Record<string, boolean>>({});
+  // Outreach draft state, keyed by identity_key.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafting, setDrafting] = useState<Record<string, boolean>>({});
+  const [converging, setConverging] = useState<Record<string, boolean>>({});
+  const [activated, setActivated] = useState<Record<string, string>>({});
+  const [activateErr, setActivateErr] = useState<Record<string, string>>({});
 
   const sourceTone: Record<string, "sea" | "amber" | "cool" | "flag"> = {
     github: "cool",
