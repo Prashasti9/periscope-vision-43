@@ -1404,6 +1404,8 @@ type PeopleCandidate = {
   } | null;
   momentum: number[];
   scored_at: string | null;
+  activated_at: string | null;
+  outreach_draft: string | null;
 };
 
 function LivePipelineView() {
