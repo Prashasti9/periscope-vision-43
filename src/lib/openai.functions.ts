@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o";
+const SCREEN_MODEL = "gpt-4o-mini";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -50,6 +51,71 @@ async function callOpenAI(body: unknown): Promise<string> {
   }
   throw new Error(lastErr || "OpenAI: exhausted retries");
 }
+
+/* =========================================================
+   screenCandidate: cheap pre-screen gate before the full
+   scoreCandidate call. Uses gpt-4o-mini to reject only clear
+   disqualifiers (no usable text at all, spam/irrelevant repo,
+   obviously off-thesis domain). Returns {pass, reason}.
+   ========================================================= */
+export type ScreenResult = { pass: boolean; reason: string };
+
+export const screenCandidate = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => {
+    const v = input as { text?: unknown; thesis?: unknown };
+    if (typeof v?.text !== "string")
+      throw new Error("text required");
+    return {
+      text: v.text,
+      thesis: typeof v?.thesis === "string" ? v.thesis : "",
+    };
+  })
+  .handler(async ({ data }): Promise<ScreenResult> => {
+    const text = data.text.trim();
+    if (!text) {
+      return { pass: false, reason: "no usable signal text" };
+    }
+
+    const system =
+      "You are a strict but conservative pre-screener for a VC deal-sourcing pipeline. " +
+      "You DO NOT score. You only reject clear disqualifiers so we don't spend a full " +
+      "GPT-4o scoring pass on obvious noise. Reject ONLY for: " +
+      "(a) no usable text at all, " +
+      "(b) spam / SEO farm / promo repo / joke or tutorial-copy content, " +
+      "(c) obviously off-thesis domain when a thesis is provided. " +
+      "When in doubt, PASS — a borderline builder must go through to full scoring. " +
+      "Return STRICT JSON only: {\"pass\": bool, \"reason\": string}. " +
+      "reason must be ONE short sentence.";
+
+    const user =
+      (data.thesis ? `Thesis (domain-restricted if non-empty): ${data.thesis}\n\n` : "") +
+      `Candidate signal text:\n${text.slice(0, 4000)}`;
+
+    const raw = await callOpenAI({
+      model: SCREEN_MODEL,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+    try {
+      const j = JSON.parse(raw) as { pass?: unknown; reason?: unknown };
+      return {
+        pass: j.pass !== false, // default to pass on ambiguous output
+        reason:
+          typeof j.reason === "string" && j.reason.trim()
+            ? j.reason.trim()
+            : j.pass === false
+              ? "disqualified"
+              : "ok",
+      };
+    } catch {
+      // Fail open — if the cheap screener misbehaves, don't block scoring.
+      return { pass: true, reason: "screener parse error — passing through" };
+    }
+  });
 
 /* =========================================================
    generateMemo: takes a founderId, loads the row, asks GPT-4o

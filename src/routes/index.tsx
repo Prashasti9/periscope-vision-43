@@ -7,6 +7,7 @@ import { runIngest } from "@/lib/ingest.functions";
 import {
   generateMemo,
   scoreCandidate,
+  screenCandidate,
   type CandidateScore,
 } from "@/lib/openai.functions";
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
@@ -1373,6 +1374,7 @@ type PeopleCandidate = {
 
 function LivePipelineView() {
   const scoreFn = useServerFn(scoreCandidate);
+  const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
@@ -1382,6 +1384,11 @@ function LivePipelineView() {
     Record<string, CandidateScore | { error: string }>
   >({});
   const [scoring, setScoring] = useState<Record<string, boolean>>({});
+  // Pre-screen state: identity_key -> {pass, reason}. Absent = not yet screened.
+  const [screened, setScreened] = useState<
+    Record<string, { pass: boolean; reason: string }>
+  >({});
+  const [showRejected, setShowRejected] = useState(false);
   // Outreach draft state, keyed by identity_key.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [drafting, setDrafting] = useState<Record<string, boolean>>({});
@@ -1533,9 +1540,27 @@ function LivePipelineView() {
           const batch = toScore.slice(i, i + 2);
           await Promise.all(
             batch.map((c) =>
-              runScore(c.identity_key).catch(() => {
-                /* runScore already stores { error } — never rethrow */
-              }),
+              (async () => {
+                // Cheap pre-screen gate first.
+                const text = [
+                  `handle: @${c.person_or_handle}`,
+                  `sources: ${c.sources}`,
+                  c.companies ? `companies/repos: ${c.companies}` : "",
+                  `signal_count: ${c.signal_count}`,
+                ]
+                  .filter(Boolean)
+                  .join("\n");
+                try {
+                  const s = await screenFn({ data: { text, thesis: "" } });
+                  setScreened((m) => ({ ...m, [c.identity_key]: s }));
+                  if (!s.pass) return; // skip expensive scoring
+                } catch {
+                  // Fail open — screener error should not block scoring.
+                }
+                await runScore(c.identity_key).catch(() => {
+                  /* runScore already stores { error } — never rethrow */
+                });
+              })(),
             ),
           );
           if (i + 2 < toScore.length) await new Promise((r) => setTimeout(r, 800));
@@ -1547,7 +1572,7 @@ function LivePipelineView() {
     return () => {
       cancelled = true;
     };
-  }, [runScore]);
+  }, [runScore, screenFn]);
 
   return (
     <div>
@@ -1572,7 +1597,9 @@ function LivePipelineView() {
           <b>Refresh live signals</b> to ingest from public APIs.
         </div>
       )}
-      {candidates.map((c) => {
+      {candidates
+        .filter((c) => screened[c.identity_key]?.pass !== false)
+        .map((c) => {
         const key = c.identity_key;
         const result = scores[key];
         const busy = scoring[key];
@@ -1944,6 +1971,96 @@ function LivePipelineView() {
           </div>
         );
       })}
+      {(() => {
+        const rejected = candidates.filter(
+          (c) => screened[c.identity_key]?.pass === false,
+        );
+        if (rejected.length === 0) return null;
+        return (
+          <div style={{ marginTop: 24 }}>
+            <button
+              onClick={() => setShowRejected((v) => !v)}
+              style={{
+                fontFamily: C.mono,
+                fontSize: 11,
+                color: C.inkSoft,
+                background: "transparent",
+                border: `1px dashed ${C.line}`,
+                borderRadius: 8,
+                padding: "6px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {showRejected ? "▾" : "▸"} Not advanced — {rejected.length}{" "}
+              screened out by pre-screen gate
+            </button>
+            {showRejected && (
+              <div style={{ marginTop: 10 }}>
+                {rejected.map((c) => {
+                  const s = screened[c.identity_key];
+                  return (
+                    <div
+                      key={c.identity_key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "8px 12px",
+                        background: C.paper,
+                        border: `1px solid ${C.line}`,
+                        borderRadius: 8,
+                        marginBottom: 6,
+                        fontSize: 12,
+                      }}
+                    >
+                      <Chip tone="amber">screened out</Chip>
+                      <span
+                        style={{ fontFamily: C.disp, fontWeight: 600 }}
+                      >
+                        @{c.person_or_handle}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: C.mono,
+                          fontSize: 10,
+                          color: C.inkSoft,
+                        }}
+                      >
+                        {c.sources}
+                      </span>
+                      <span style={{ color: C.inkSoft, marginLeft: "auto" }}>
+                        {s?.reason || "disqualified"}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setScreened((m) => {
+                            const n = { ...m };
+                            delete n[c.identity_key];
+                            return n;
+                          });
+                          runScore(c.identity_key);
+                        }}
+                        style={{
+                          fontSize: 11,
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${C.sea}`,
+                          background: "#fff",
+                          color: C.sea,
+                          cursor: "pointer",
+                          fontFamily: C.body,
+                        }}
+                      >
+                        Override & score
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
