@@ -206,6 +206,42 @@ export type Database = {
         }
         Relationships: []
       }
+      thesis_config: {
+        Row: {
+          check_size: number
+          cities: Json
+          geographies: Json
+          id: string
+          ownership_target: number
+          risk: string
+          sectors: Json
+          stages: Json
+          updated_at: string
+        }
+        Insert: {
+          check_size?: number
+          cities?: Json
+          geographies?: Json
+          id?: string
+          ownership_target?: number
+          risk?: string
+          sectors?: Json
+          stages?: Json
+          updated_at?: string
+        }
+        Update: {
+          check_size?: number
+          cities?: Json
+          geographies?: Json
+          id?: string
+          ownership_target?: number
+          risk?: string
+          sectors?: Json
+          stages?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
