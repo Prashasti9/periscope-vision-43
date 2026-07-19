@@ -312,3 +312,192 @@ export const scoreCandidate = createServerFn({ method: "POST" })
 
     return result;
   });
+
+/* scoreFounder — identityKey-agnostic path. Scores a founders row
+   (typically an inbound application) using enrichFounder for evidence,
+   then persists axes/founder_score/momentum back onto founders. */
+export const scoreFounder = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => {
+    const v = input as { founderId?: unknown };
+    if (typeof v?.founderId !== "string" || !v.founderId)
+      throw new Error("founderId required");
+    return { founderId: v.founderId };
+  })
+  .handler(async ({ data }): Promise<CandidateScore> => {
+    const { enrichFounder } = await import("./enrich.functions");
+    const enriched = await enrichFounder({ data: { founderId: data.founderId } });
+
+    const system =
+      "You are an evidence-first VC scorer. Score three independent axes for an inbound founder application, " +
+      "each on a 1–10 integer scale, using ONLY the cited raw signals AND retrieved web evidence below. " +
+      "If evidence for an axis is thin, absent, or contradictory, mark it unscorable=true " +
+      "with score=null and reason starting 'unscorable — flagged: ...'. " +
+      "Never invent facts, metrics, or affiliations. Cite web sources inline in parentheses (e.g. (example.com)). " +
+      "Market and idea_vs_market reasoning MUST cite a specific fact, figure, or quote from the " +
+      "provided evidence — never reason from general knowledge of the space alone. " +
+      "Reasons must be ONE sentence. Return STRICT JSON only. " +
+      "Schema: {\"founder\":{\"score\":int|null,\"reason\":str,\"unscorable\":bool}," +
+      "\"market\":{...},\"idea_vs_market\":{...},\"sources_used\":[str]}.";
+
+    const payload = {
+      candidate: {
+        person_or_handle: enriched.person_or_handle,
+        companies: enriched.companies,
+        cold_start: enriched.cold_start,
+        track: "inbound",
+      },
+      signals: enriched.signals,
+      web_evidence: enriched.web_evidence,
+    };
+
+    const text = await callOpenAI({
+      model: MODEL,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+    });
+
+    let parsed: CandidateScore;
+    try {
+      parsed = JSON.parse(text) as CandidateScore;
+    } catch {
+      throw new Error("Scorer returned malformed JSON");
+    }
+
+    const n = enriched.evidence_count;
+    const rel = enriched.avg_reliability;
+    const baseSpread =
+      Math.max(0.5, 3 - Math.log2(1 + n) * 0.6) * (1.2 - rel * 0.4);
+    const round1 = (v: number) => Math.round(v * 10) / 10;
+
+    const clean = (a: unknown): AxisScore => {
+      const x = (a ?? {}) as Partial<AxisScore>;
+      const un = Boolean(x.unscorable) || x.score == null;
+      if (un) {
+        return {
+          score: null,
+          low: null,
+          high: null,
+          reason:
+            typeof x.reason === "string"
+              ? x.reason
+              : "unscorable — flagged: no reason returned",
+          unscorable: true,
+        };
+      }
+      const score = Math.max(1, Math.min(10, Math.round(Number(x.score) || 0)));
+      return {
+        score,
+        low: round1(Math.max(1, score - baseSpread)),
+        high: round1(Math.min(10, score + baseSpread)),
+        reason:
+          typeof x.reason === "string"
+            ? x.reason
+            : "unscorable — flagged: no reason returned",
+        unscorable: false,
+      };
+    };
+
+    const result: CandidateScore = {
+      founder: clean(parsed.founder),
+      market: clean(parsed.market),
+      idea_vs_market: clean(parsed.idea_vs_market),
+      sources_used: Array.isArray(parsed.sources_used)
+        ? parsed.sources_used.filter((x): x is string => typeof x === "string")
+        : [],
+    };
+
+    // Composite founder_score (weighted; skip unscorable axes).
+    const weights: Array<[keyof CandidateScore, number]> = [
+      ["founder", 0.5],
+      ["market", 0.3],
+      ["idea_vs_market", 0.2],
+    ];
+    let wSum = 0, vSum = 0, lowSum = 0, highSum = 0;
+    for (const [k, w] of weights) {
+      const ax = result[k] as AxisScore;
+      if (!ax || ax.unscorable || ax.score == null) continue;
+      wSum += w;
+      vSum += ax.score * w;
+      lowSum += (ax.low ?? ax.score) * w;
+      highSum += (ax.high ?? ax.score) * w;
+    }
+    const composite = wSum > 0
+      ? {
+          value: round1(vSum / wSum),
+          low: round1(lowSum / wSum),
+          high: round1(highSum / wSum),
+        }
+      : null;
+
+    // Persist onto founders row. Map to the seed founders schema shape:
+    //   axes: { founder|market|ideaVsMarket: {score, trend, note} }
+    //   founder_score: { value, low, high, trend, coldStart }
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: existing } = await supabaseAdmin
+        .from("founders")
+        .select("momentum, founder_score")
+        .eq("id", data.founderId)
+        .maybeSingle();
+      const prevMomentum = Array.isArray((existing as { momentum?: unknown } | null)?.momentum)
+        ? ((existing as { momentum: unknown[] }).momentum as number[])
+        : [];
+      const prevFs = (existing as { founder_score?: { value?: number } | null } | null)?.founder_score ?? null;
+      const nextMomentum =
+        composite != null
+          ? [...prevMomentum, composite.value].slice(-10)
+          : prevMomentum;
+      const trend =
+        composite && prevFs && typeof prevFs.value === "number" && prevFs.value > 0
+          ? composite.value > prevFs.value
+            ? "up"
+            : composite.value < prevFs.value
+              ? "down"
+              : "flat"
+          : "flat";
+
+      const axisToSeedShape = (ax: AxisScore) => ({
+        score: ax.unscorable ? null : ax.score,
+        trend: null,
+        note: ax.reason,
+      });
+      const axesRow = {
+        founder: axisToSeedShape(result.founder),
+        market: axisToSeedShape(result.market),
+        ideaVsMarket: axisToSeedShape(result.idea_vs_market),
+      };
+      const founderScoreRow = composite
+        ? {
+            value: composite.value,
+            low: composite.low,
+            high: composite.high,
+            trend,
+            coldStart: enriched.cold_start,
+          }
+        : {
+            value: 0,
+            low: 0,
+            high: 0,
+            trend: "flat",
+            coldStart: enriched.cold_start,
+          };
+
+      await supabaseAdmin
+        .from("founders")
+        .update({
+          axes: axesRow as unknown as never,
+          founder_score: founderScoreRow as unknown as never,
+          momentum: nextMomentum as unknown as never,
+          gaps: (composite ? [] : ["Insufficient evidence to score"]) as unknown as never,
+        })
+        .eq("id", data.founderId);
+    } catch (e) {
+      console.warn("scoreFounder persist failed:", e);
+    }
+
+    return result;
+  });
