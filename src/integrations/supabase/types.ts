@@ -84,12 +84,14 @@ export type Database = {
         Row: {
           activated_at: string | null
           axes: Json | null
+          check_ask: number | null
           companies: string
           founder_score: Json | null
           geo: string | null
           identity_key: string
           momentum: Json
           outreach_draft: string | null
+          ownership_ask: number | null
           person_or_handle: string
           scored_at: string | null
           sector: string | null
@@ -102,12 +104,14 @@ export type Database = {
         Insert: {
           activated_at?: string | null
           axes?: Json | null
+          check_ask?: number | null
           companies?: string
           founder_score?: Json | null
           geo?: string | null
           identity_key: string
           momentum?: Json
           outreach_draft?: string | null
+          ownership_ask?: number | null
           person_or_handle: string
           scored_at?: string | null
           sector?: string | null
@@ -120,12 +124,14 @@ export type Database = {
         Update: {
           activated_at?: string | null
           axes?: Json | null
+          check_ask?: number | null
           companies?: string
           founder_score?: Json | null
           geo?: string | null
           identity_key?: string
           momentum?: Json
           outreach_draft?: string | null
+          ownership_ask?: number | null
           person_or_handle?: string
           scored_at?: string | null
           sector?: string | null
