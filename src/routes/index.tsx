@@ -133,6 +133,12 @@ function thesisFit(f: Founder, thesis: typeof DEFAULT_THESIS) {
   return { fit, why };
 }
 
+function thesisToText(t: typeof DEFAULT_THESIS) {
+  return `Sectors: ${t.sectors.join(", ") || "any"}. ` +
+    `Stages: ${t.stages.join(", ") || "any"}. ` +
+    `Geography: ${t.geos.join(", ") || "any"}. Risk appetite: ${t.risk}.`;
+}
+
 /* -------- Primitives -------- */
 function Chip({
   tone = "cool",
