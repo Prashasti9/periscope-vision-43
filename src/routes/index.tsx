@@ -1763,7 +1763,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
                   .filter(Boolean)
                   .join("\n");
                 try {
-                  const s = await screenFn({ data: { text, thesis: "" } });
+                  const s = await screenFn({ data: { text, thesis: thesisToText(thesis) } });
                   setScreened((m) => ({ ...m, [c.identity_key]: s }));
                   if (!s.pass) return; // skip expensive scoring
                 } catch {
