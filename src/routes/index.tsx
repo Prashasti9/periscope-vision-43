@@ -1379,6 +1379,7 @@ function LivePipelineView() {
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
+  const getCandidatesFn = useServerFn(getPeopleCandidates);
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1484,17 +1485,16 @@ function LivePipelineView() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from("people_candidates" as never)
-        .select("*")
-        .order("signal_count", { ascending: false })
-        .limit(200);
-      if (cancelled) return;
-      if (error) {
-        setErr(error.message);
+      let data: unknown[] = [];
+      try {
+        data = await getCandidatesFn({ data: { limit: 200 } });
+      } catch (error) {
+        if (cancelled) return;
+        setErr(error instanceof Error ? error.message : String(error));
         setLoading(false);
         return;
       }
+      if (cancelled) return;
       const rows = ((data ?? []) as unknown as PeopleCandidate[])
         .sort((a, b) => {
           const ba = isBuilderSource(a.sources) ? 1 : 0;
