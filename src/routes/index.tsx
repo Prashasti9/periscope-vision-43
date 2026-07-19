@@ -734,6 +734,7 @@ function Periscope() {
   const ranked = useMemo(
     () =>
       founders
+        .filter((f) => thesisMatches(f, thesis))
         .map((f) => ({ f, ...thesisFit(f, thesis) }))
         .sort((a, b) => b.fit - a.fit),
     [founders, thesis],
