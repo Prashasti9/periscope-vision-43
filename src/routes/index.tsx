@@ -1584,7 +1584,7 @@ type PeopleCandidate = {
   outreach_draft: string | null;
 };
 
-function LivePipelineView() {
+function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const scoreFn = useServerFn(scoreCandidate);
   const screenFn = useServerFn(screenCandidate);
   const aiFn = useServerFn(askAI);
