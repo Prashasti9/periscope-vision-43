@@ -1414,11 +1414,11 @@ function LivePipelineView() {
           if (ba !== bb) return bb - ba;
           return b.signal_count - a.signal_count;
         })
-        .slice(0, 15);
+        .slice(0, 50);
       setCandidates(rows);
       setLoading(false);
-      // Auto-score top 3
-      rows.slice(0, 3).forEach((c) => runScore(c.identity_key));
+      // Auto enrich + score the top 15 by signal_count (builder-sources first).
+      rows.slice(0, 15).forEach((c) => runScore(c.identity_key));
     })();
     return () => {
       cancelled = true;
@@ -1512,7 +1512,11 @@ function LivePipelineView() {
                   fontWeight: 600,
                 }}
               >
-                {busy ? "Scoring…" : result ? "Rescore" : "Score"}
+                {busy
+                  ? "Enriching & scoring…"
+                  : result
+                    ? "Re-enrich & score"
+                    : "Enrich & score"}
               </button>
             </div>
             {c.companies && (
@@ -1587,6 +1591,18 @@ function LivePipelineView() {
                         <div style={{ fontFamily: C.disp, fontSize: 22, fontWeight: 600 }}>
                           {ax.score}/10
                         </div>
+                        {ax.low !== null && ax.high !== null && (
+                          <div
+                            style={{
+                              fontFamily: C.mono,
+                              fontSize: 10,
+                              color: C.inkSoft,
+                              marginTop: 2,
+                            }}
+                          >
+                            range {ax.low}–{ax.high}
+                          </div>
+                        )}
                         <div
                           style={{
                             fontSize: 11,

@@ -88,6 +88,8 @@ export const generateMemo = createServerFn({ method: "POST" })
 
 export type AxisScore = {
   score: number | null;
+  low: number | null;
+  high: number | null;
   reason: string;
   unscorable: boolean;
 };
@@ -98,10 +100,6 @@ export type CandidateScore = {
   sources_used: string[];
 };
 
-function normalizeIdentity(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 export const scoreCandidate = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => {
     const v = input as { identityKey?: unknown };
@@ -110,103 +108,22 @@ export const scoreCandidate = createServerFn({ method: "POST" })
     return { identityKey: v.identityKey };
   })
   .handler(async ({ data }): Promise<CandidateScore> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    const { data: candidate, error: cErr } = await supabaseAdmin
-      .from("people_candidates")
-      .select("*")
-      .eq("identity_key", data.identityKey)
-      .maybeSingle();
-    if (cErr) throw new Error(`DB: ${cErr.message}`);
-    if (!candidate) throw new Error("Candidate not found");
-
-    // Pull signals whose person_or_handle normalizes to the same identity key.
-    const { data: rawSignals, error: sErr } = await supabaseAdmin
-      .from("signals")
-      .select("*")
-      .ilike("person_or_handle", candidate.person_or_handle);
-    if (sErr) throw new Error(`DB: ${sErr.message}`);
-
-    const signals = (rawSignals ?? []).filter(
-      (s) => normalizeIdentity(s.person_or_handle) === data.identityKey,
-    );
-
-    // --- Auto-run Deep Diligence: fetch web evidence via Tavily, persist to
-    // real_signals, then feed both raw signals AND web evidence into the scorer
-    // so market / idea-vs-market axes have something to reason from.
-    const subject = candidate.person_or_handle;
-    const companyHint = (candidate.companies ?? "")
-      .split(/[,;|]/)
-      .map((x) => x.trim())
-      .filter(Boolean)[0] ?? "";
-    const query = `${subject} ${companyHint} founder startup market`.replace(/\s+/g, " ").trim();
-
-    type WebEvidence = { title: string; url: string; content: string; score: number };
-    let webEvidence: WebEvidence[] = [];
-
-    const tavilyKey = process.env.TAVILY_API_KEY;
-    if (tavilyKey) {
-      try {
-        const tavRes = await fetch("https://api.tavily.com/search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${tavilyKey}`,
-          },
-          body: JSON.stringify({
-            query,
-            search_depth: "advanced",
-            max_results: 6,
-            include_raw_content: true,
-          }),
-        });
-        if (tavRes.ok) {
-          const tavJson = (await tavRes.json()) as {
-            results?: Array<{
-              title?: string;
-              url?: string;
-              content?: string;
-              raw_content?: string;
-              score?: number;
-            }>;
-          };
-          webEvidence = (tavJson.results ?? []).map((r) => ({
-            title: r.title ?? "",
-            url: r.url ?? "",
-            content: (r.content ?? r.raw_content ?? "").slice(0, 3000),
-            score: typeof r.score === "number" ? r.score : 0,
-          }));
-
-          if (webEvidence.length) {
-            const today = new Date().toISOString().slice(0, 10);
-            await supabaseAdmin.from("real_signals").insert(
-              webEvidence.map((e) => ({
-                source: "tavily",
-                subject,
-                query,
-                title: e.title,
-                url: e.url,
-                content: e.content,
-                score: e.score,
-                reliability: 0.7,
-                date: today,
-              })),
-            );
-          }
-        }
-      } catch {
-        // Non-fatal: fall back to scoring on raw signals alone.
-        webEvidence = [];
-      }
-    }
+    // Enrich first: adds GitHub profile + Tavily web evidence so market /
+    // idea_vs_market axes have real facts to cite, not general knowledge.
+    const { enrichCandidate } = await import("./enrich.functions");
+    const enriched = await enrichCandidate({ data: { identityKey: data.identityKey } });
 
     const system =
       "You are an evidence-first VC scorer. Score three independent axes for a candidate, " +
-      "each on a 1–10 integer scale, using ONLY the cited raw signals AND retrieved web evidence below. " +
+      "each on a 1–10 integer scale, using ONLY the cited raw signals, GitHub profile, AND retrieved web evidence below. " +
       "If evidence for an axis is thin, absent, or contradictory, mark it unscorable=true " +
       "with score=null and reason starting 'unscorable — flagged: ...'. " +
       "Never invent facts, metrics, or affiliations. Cite signal_ids inline like [signal_id]. " +
       "For web evidence, cite the source URL inline in parentheses (e.g. (example.com)). " +
+      "Market and idea_vs_market reasoning MUST cite a specific fact, figure, or quote from the " +
+      "provided evidence — never reason from general knowledge of the space alone. If the enriched " +
+      "evidence still doesn't contain a usable fact for an axis, mark it unscorable — do not fill " +
+      "the gap with inference. " +
       "Reasons must be ONE sentence. Return STRICT JSON only, no prose, no backticks. " +
       "Schema: {\"founder\":{\"score\":int|null,\"reason\":str,\"unscorable\":bool}," +
       "\"market\":{...},\"idea_vs_market\":{...},\"sources_used\":[str]}. " +
@@ -216,29 +133,14 @@ export const scoreCandidate = createServerFn({ method: "POST" })
 
     const payload = {
       candidate: {
-        person_or_handle: candidate.person_or_handle,
-        identity_key: candidate.identity_key,
-        source_count: candidate.source_count,
-        signal_count: candidate.signal_count,
-        sources: candidate.sources,
-        companies: candidate.companies,
+        person_or_handle: enriched.person_or_handle,
+        identity_key: enriched.identity_key,
+        companies: enriched.companies,
+        cold_start: enriched.cold_start,
       },
-      signals: signals.map((s) => ({
-        signal_id: s.signal_id,
-        source: s.source,
-        text: s.text,
-        url: s.url,
-        company: s.company,
-        date: s.date,
-        reliability: s.reliability,
-      })),
-      web_evidence: webEvidence.map((e, i) => ({
-        idx: `W-${i}`,
-        title: e.title,
-        url: e.url,
-        relevance: e.score,
-        content: e.content,
-      })),
+      signals: enriched.signals,
+      github_profile: enriched.github_profile,
+      web_evidence: enriched.web_evidence,
     };
 
     const text = await callOpenAI({
@@ -258,14 +160,42 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       throw new Error("Scorer returned malformed JSON");
     }
 
+    // Spread narrows as evidence count/reliability increases.
+    // Base 3.0; log-scale by count; scaled by (1.2 - 0.4*avgReliability).
+    const n = enriched.evidence_count;
+    const rel = enriched.avg_reliability;
+    const baseSpread =
+      Math.max(0.5, 3 - Math.log2(1 + n) * 0.6) * (1.2 - rel * 0.4);
+    const round1 = (v: number) => Math.round(v * 10) / 10;
+
     // Normalize / guard
     const clean = (a: unknown): AxisScore => {
       const x = (a ?? {}) as Partial<AxisScore>;
       const un = Boolean(x.unscorable) || x.score == null;
+      if (un) {
+        return {
+          score: null,
+          low: null,
+          high: null,
+          reason:
+            typeof x.reason === "string"
+              ? x.reason
+              : "unscorable — flagged: no reason returned",
+          unscorable: true,
+        };
+      }
+      const score = Math.max(1, Math.min(10, Math.round(Number(x.score) || 0)));
+      const low = round1(Math.max(1, score - baseSpread));
+      const high = round1(Math.min(10, score + baseSpread));
       return {
-        score: un ? null : Math.max(1, Math.min(10, Math.round(Number(x.score) || 0))),
-        reason: typeof x.reason === "string" ? x.reason : "unscorable — flagged: no reason returned",
-        unscorable: un,
+        score,
+        low,
+        high,
+        reason:
+          typeof x.reason === "string"
+            ? x.reason
+            : "unscorable — flagged: no reason returned",
+        unscorable: false,
       };
     };
 
