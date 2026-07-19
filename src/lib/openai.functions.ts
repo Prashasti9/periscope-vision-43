@@ -3,26 +3,52 @@ import { createServerFn } from "@tanstack/react-start";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const MODEL = "gpt-4o";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function callOpenAI(body: unknown): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("Missing OPENAI_API_KEY");
-  const res = await fetch(OPENAI_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-  });
-  if (res.status === 401) throw new Error("OpenAI: invalid API key.");
-  if (res.status === 429) throw new Error("OpenAI rate limit — retry shortly.");
-  if (res.status === 402) throw new Error("OpenAI: quota exhausted / billing.");
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`OpenAI error ${res.status}: ${text.slice(0, 300)}`);
+  const maxAttempts = 4;
+  let lastErr = "";
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(OPENAI_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) throw new Error("OpenAI: invalid API key.");
+    if (res.status === 402) throw new Error("OpenAI: quota exhausted / billing.");
+    if (res.status === 429) {
+      // Rate-limited — honor Retry-After when present, otherwise exp backoff.
+      const ra = res.headers.get("retry-after");
+      const raMs = ra ? Number(ra) * 1000 : NaN;
+      const backoff = Number.isFinite(raMs) && raMs > 0
+        ? Math.min(raMs, 15000)
+        : Math.min(1000 * 2 ** (attempt - 1), 8000) + Math.floor(Math.random() * 400);
+      lastErr = `OpenAI rate limit (429) — attempt ${attempt}/${maxAttempts}`;
+      if (attempt < maxAttempts) {
+        await sleep(backoff);
+        continue;
+      }
+      throw new Error("OpenAI rate limit — retry shortly.");
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      // Retry transient 5xx too.
+      if (res.status >= 500 && attempt < maxAttempts) {
+        lastErr = `OpenAI ${res.status}`;
+        await sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
+        continue;
+      }
+      throw new Error(`OpenAI error ${res.status}: ${text.slice(0, 300)}`);
+    }
+    const j = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    return (j.choices?.[0]?.message?.content ?? "").trim();
   }
-  const j = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  return (j.choices?.[0]?.message?.content ?? "").trim();
+  throw new Error(lastErr || "OpenAI: exhausted retries");
 }
 
 /* =========================================================
