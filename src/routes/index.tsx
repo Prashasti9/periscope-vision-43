@@ -1032,7 +1032,7 @@ function Periscope() {
         <div
           style={{
             width: 220,
-            background: C.ink,
+            background: C.petrol,
             padding: "16px 10px",
             flexShrink: 0,
           }}
@@ -2454,7 +2454,7 @@ function PipelineView({
                   padding: "6px 12px",
                   borderRadius: 8,
                   border: "none",
-                  background: C.ink,
+                  background: C.sea,
                   color: "#fff",
                   cursor: "pointer",
                   fontWeight: 600,
@@ -2620,7 +2620,7 @@ function DossierView({ f, onMemo }: { f: Founder; onMemo: (f: Founder) => void }
           padding: "10px 18px",
           borderRadius: 8,
           border: "none",
-          background: C.petrol,
+          background: C.sea,
           color: "#fff",
           cursor: "pointer",
           fontWeight: 600,
