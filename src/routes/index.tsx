@@ -2010,9 +2010,16 @@ function PipelineView({
                 [
                   ["Founder", f.axes.founder],
                   ["Market", f.axes.market],
-                  ["Idea vs Market", f.axes.ideaVsMarket],
+                  ["Idea vs Market", f.axes.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown }).idea_vs_market],
                 ] as const
-              ).map(([label, ax]) => (
+              ).map(([label, axRaw]) => {
+                const ax = (axRaw ?? { score: null, trend: null, note: "unscorable — flagged: no data", rating: null }) as {
+                  score: number | null;
+                  trend: string | null;
+                  note: string;
+                  rating?: string | null;
+                };
+                return (
                 <div
                   key={label}
                   style={{
@@ -2052,7 +2059,8 @@ function PipelineView({
                     {ax.note}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <details style={{ marginBottom: 8 }}>
               <summary
