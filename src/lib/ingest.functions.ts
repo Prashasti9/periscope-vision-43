@@ -81,7 +81,7 @@ async function httpGet(url: string, params: Record<string, string | number>, hea
 async function fetchGithub(since: string, limit: number, token?: string): Promise<Signal[]> {
   const rows: Signal[] = [];
   const seen = new Set<number>();
-  const auth = token ? { Authorization: `Bearer ${token}` } : {};
+  const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   for (const topic of ["llm", "ai-agents", "rag", "inference"]) {
     try {
       const res = await httpGet(
