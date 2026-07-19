@@ -1540,9 +1540,27 @@ function LivePipelineView() {
           const batch = toScore.slice(i, i + 2);
           await Promise.all(
             batch.map((c) =>
-              runScore(c.identity_key).catch(() => {
-                /* runScore already stores { error } — never rethrow */
-              }),
+              (async () => {
+                // Cheap pre-screen gate first.
+                const text = [
+                  `handle: @${c.person_or_handle}`,
+                  `sources: ${c.sources}`,
+                  c.companies ? `companies/repos: ${c.companies}` : "",
+                  `signal_count: ${c.signal_count}`,
+                ]
+                  .filter(Boolean)
+                  .join("\n");
+                try {
+                  const s = await screenFn({ data: { text, thesis: "" } });
+                  setScreened((m) => ({ ...m, [c.identity_key]: s }));
+                  if (!s.pass) return; // skip expensive scoring
+                } catch {
+                  // Fail open — screener error should not block scoring.
+                }
+                await runScore(c.identity_key).catch(() => {
+                  /* runScore already stores { error } — never rethrow */
+                });
+              })(),
             ),
           );
           if (i + 2 < toScore.length) await new Promise((r) => setTimeout(r, 800));
