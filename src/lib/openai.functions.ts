@@ -460,16 +460,8 @@ export const scoreFounder = createServerFn({ method: "POST" })
               : "flat"
           : "flat";
 
-      const axisToSeedShape = (ax: AxisScore) => ({
-        score: ax.unscorable ? null : ax.score,
-        trend: null,
-        note: ax.reason,
-      });
-      const axesRow = {
-        founder: axisToSeedShape(result.founder),
-        market: axisToSeedShape(result.market),
-        ideaVsMarket: axisToSeedShape(result.idea_vs_market),
-      };
+      const { toDisplayAxes } = await import("./adapters");
+      const axesRow = toDisplayAxes(result, `founder:${data.founderId}`);
       const founderScoreRow = composite
         ? {
             value: composite.value,

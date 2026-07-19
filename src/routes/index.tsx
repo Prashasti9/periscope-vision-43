@@ -12,6 +12,7 @@ import {
 import { deepDiligence, type DiligenceResult } from "@/lib/diligence.functions";
 import { submitApplication, convergeCandidate } from "@/lib/application.functions";
 import { scoreFounder } from "@/lib/openai.functions";
+import { toDisplayAxes } from "@/lib/adapters";
 
 export const Route = createFileRoute("/")({
   component: Periscope,
@@ -631,6 +632,10 @@ function Evidence({ s }: { s: Founder["signals"][number] }) {
 
 /* -------- Row → Founder mapping -------- */
 function rowToFounder(r: any): Founder {
+  // Normalize axes through the single adapter so legacy rows that stored a
+  // raw CandidateScore (snake_case idea_vs_market, no trend field) render
+  // correctly instead of TypeError'ing on ax.trend and blanking the page.
+  const axes = toDisplayAxes(r.axes, `founder:${r?.id ?? "(unknown)"}`);
   return {
     id: r.id,
     name: r.name,
@@ -644,7 +649,7 @@ function rowToFounder(r: any): Founder {
     priorVC: r.prior_vc,
     tags: r.tags ?? [],
     founderScore: r.founder_score,
-    axes: r.axes,
+    axes: axes as unknown as Founder["axes"],
     signals: r.signals ?? [],
     claims: r.claims ?? [],
     gaps: r.gaps ?? [],
@@ -2010,7 +2015,7 @@ function PipelineView({
                 [
                   ["Founder", f.axes?.founder],
                   ["Market", f.axes?.market],
-                  ["Idea vs Market", f.axes?.ideaVsMarket ?? (f.axes as unknown as { idea_vs_market?: unknown } | undefined)?.idea_vs_market],
+                  ["Idea vs Market", f.axes?.ideaVsMarket],
                 ] as const
               ).map(([label, axRaw]) => {
                 const ax = (axRaw ?? { score: null, trend: null, note: "unscorable — flagged: no data", rating: null }) as {
