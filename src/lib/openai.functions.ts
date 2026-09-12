@@ -6,10 +6,35 @@ const SCREEN_MODEL = "gpt-4o-mini";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Global throttle: at most 1 in-flight OpenAI request per server instance,
+// with a minimum gap between calls. Prevents the parallel scoring queue from
+// hammering the API and tripping 429s.
+let chain: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+const MIN_GAP_MS = 700;
+
+function throttle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(async () => {
+    const wait = MIN_GAP_MS - (Date.now() - lastCallAt);
+    if (wait > 0) await sleep(wait);
+    try {
+      return await fn();
+    } finally {
+      lastCallAt = Date.now();
+    }
+  });
+  chain = run.catch(() => {});
+  return run;
+}
+
 async function callOpenAI(body: unknown): Promise<string> {
+  return throttle(() => callOpenAIInner(body));
+}
+
+async function callOpenAIInner(body: unknown): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("Missing OPENAI_API_KEY");
-  const maxAttempts = 4;
+  const maxAttempts = 6;
   let lastErr = "";
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch(OPENAI_URL, {
