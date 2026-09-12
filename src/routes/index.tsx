@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { askAI } from "@/lib/founder-compass-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
-import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
+import {
+  getCandidateScores,
+  getFounders,
+  getPeopleCandidates,
+  getSignals,
+} from "@/lib/data.functions";
 import {
   generateMemo,
   scoreCandidate,
