@@ -1660,6 +1660,10 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const getCandidatesFn = useServerFn(getPeopleCandidates);
+  const getCandidateScoresFn = useServerFn(getCandidateScores);
+  // Identity keys already handed to the auto-score queue — a ref so
+  // re-renders never double-fire the same expensive call.
+  const queuedRef = useRef<Set<string>>(new Set());
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1908,7 +1912,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn, getCandidatesFn, thesis]);
+  }, [runScore, screenFn, getCandidatesFn, getCandidateScoresFn, thesis]);
 
   return (
     <div>
