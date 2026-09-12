@@ -52,8 +52,8 @@ async function callOpenAIInner(body: unknown): Promise<string> {
       const ra = res.headers.get("retry-after");
       const raMs = ra ? Number(ra) * 1000 : NaN;
       const backoff = Number.isFinite(raMs) && raMs > 0
-        ? Math.min(raMs, 15000)
-        : Math.min(1000 * 2 ** (attempt - 1), 8000) + Math.floor(Math.random() * 400);
+        ? Math.min(raMs, 30000)
+        : Math.min(1500 * 2 ** (attempt - 1), 20000) + Math.floor(Math.random() * 600);
       lastErr = `OpenAI rate limit (429) — attempt ${attempt}/${maxAttempts}`;
       if (attempt < maxAttempts) {
         await sleep(backoff);
