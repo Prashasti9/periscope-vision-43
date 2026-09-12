@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { askAI } from "@/lib/founder-compass-ai.functions";
 import { runIngest } from "@/lib/ingest.functions";
-import { getFounders, getPeopleCandidates, getSignals } from "@/lib/data.functions";
+import {
+  getCandidateScores,
+  getFounders,
+  getPeopleCandidates,
+  getSignals,
+} from "@/lib/data.functions";
 import {
   generateMemo,
   scoreCandidate,
@@ -1655,6 +1660,10 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const aiFn = useServerFn(askAI);
   const convergeFn = useServerFn(convergeCandidate);
   const getCandidatesFn = useServerFn(getPeopleCandidates);
+  const getCandidateScoresFn = useServerFn(getCandidateScores);
+  // Identity keys already handed to the auto-score queue — a ref so
+  // re-renders never double-fire the same expensive call.
+  const queuedRef = useRef<Set<string>>(new Set());
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1815,10 +1824,27 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         .slice(0, 50);
       setCandidates(rows);
       setLoading(false);
-      // Seed from persisted axes so we don't re-score every session.
+      // Seed from the candidate_scores table first; fall back to the
+      // axes column on the candidate row only where the table has no entry.
       const seeded: Record<string, CandidateScore> = {};
+      let persistedKeys = new Set<string>();
+      try {
+        const persisted = (await getCandidateScoresFn()) as unknown as Array<{
+          identity_key: string;
+          score: CandidateScore;
+        }>;
+        for (const p of persisted ?? []) {
+          if (!p?.identity_key || !p.score) continue;
+          seeded[p.identity_key] = p.score;
+          persistedKeys.add(p.identity_key);
+        }
+      } catch {
+        persistedKeys = new Set<string>();
+      }
+      if (cancelled) return;
       for (const r of rows) {
-        if (r.axes) seeded[r.identity_key] = r.axes;
+        if (!persistedKeys.has(r.identity_key) && r.axes)
+          seeded[r.identity_key] = r.axes;
       }
       if (Object.keys(seeded).length > 0) {
         setScores((m) => ({ ...seeded, ...m }));
@@ -1834,49 +1860,51 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         setActivated((m) => ({ ...seedActivated, ...m }));
       if (Object.keys(seedDrafts).length > 0)
         setDrafts((m) => ({ ...seedDrafts, ...m }));
-      // Only score rows whose scored_at is null or older than 7 days.
-      const staleMs = 7 * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      const stale = rows.filter((r) => {
-        if (!r.scored_at) return true;
-        const t = Date.parse(r.scored_at);
-        return Number.isNaN(t) || now - t > staleMs;
-      });
-      // Bounded auto-scoring: top 5 only, in small batches of 2 with a
-      // short delay between batches, each call fully isolated. Manual
-      // "Enrich & score" button covers the rest.
-      (async () => {
-        const toScore = stale.slice(0, 5);
-        for (let i = 0; i < toScore.length; i += 2) {
-          if (cancelled) return;
-          const batch = toScore.slice(i, i + 2);
-          await Promise.all(
-            batch.map((c) =>
-              (async () => {
-                // Cheap pre-screen gate first.
-                const text = [
-                  `handle: @${c.person_or_handle}`,
-                  `sources: ${c.sources}`,
-                  c.companies ? `companies/repos: ${c.companies}` : "",
-                  `signal_count: ${c.signal_count}`,
-                ]
-                  .filter(Boolean)
-                  .join("\n");
-                try {
-                  const s = await screenFn({ data: { text, thesis: thesisToText(thesis) } });
-                  setScreened((m) => ({ ...m, [c.identity_key]: s }));
-                  if (!s.pass) return; // skip expensive scoring
-                } catch {
-                  // Fail open — screener error should not block scoring.
-                }
-                await runScore(c.identity_key).catch(() => {
-                  /* runScore already stores { error } — never rethrow */
-                });
-              })(),
-            ),
-          );
-          if (i + 2 < toScore.length) await new Promise((r) => setTimeout(r, 800));
+      // Auto-score every candidate that still has no score, through a
+      // queue limited to 3 concurrent calls. Keys already queued live in
+      // a ref so re-renders never double-fire a call.
+      const pending = rows.filter(
+        (r) => !seeded[r.identity_key] && !queuedRef.current.has(r.identity_key),
+      );
+      for (const r of pending) queuedRef.current.add(r.identity_key);
+
+      const scoreOne = async (c: PeopleCandidate) => {
+        // Cheap pre-screen gate before the expensive call.
+        const text = [
+          `handle: @${c.person_or_handle}`,
+          `sources: ${c.sources}`,
+          c.companies ? `companies/repos: ${c.companies}` : "",
+          `signal_count: ${c.signal_count}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        try {
+          const s2 = await screenFn({ data: { text, thesis: thesisToText(thesis) } });
+          setScreened((m) => ({ ...m, [c.identity_key]: s2 }));
+          if (!s2.pass) return; // skip expensive scoring
+        } catch {
+          // Fail open — screener error should not block scoring.
         }
+        await runScore(c.identity_key).catch(() => {
+          /* runScore already stores { error } — never rethrow */
+        });
+      };
+
+      (async () => {
+        let next = 0;
+        const worker = async () => {
+          while (!cancelled) {
+            const idx = next++;
+            if (idx >= pending.length) return;
+            const c = pending[idx];
+            try {
+              await scoreOne(c);
+            } catch {
+              queuedRef.current.delete(c.identity_key);
+            }
+          }
+        };
+        await Promise.all([worker(), worker(), worker()]);
       })().catch(() => {
         /* defensive: no unhandled rejection escapes */
       });
@@ -1884,7 +1912,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn, getCandidatesFn, thesis]);
+  }, [runScore, screenFn, getCandidatesFn, getCandidateScoresFn, thesis]);
 
   return (
     <div>
