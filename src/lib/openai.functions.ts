@@ -386,6 +386,21 @@ export const scoreCandidate = createServerFn({ method: "POST" })
       // persistence is best-effort — never fail the score call
     }
 
+    // Persist the raw score payload into candidate_scores (best-effort).
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.from("candidate_scores").upsert(
+        {
+          identity_key: data.identityKey,
+          score: result as unknown as never,
+          scored_at: new Date().toISOString(),
+        },
+        { onConflict: "identity_key" },
+      );
+    } catch {
+      // never fail the scoring call on a failed write
+    }
+
     return result;
   });
 
