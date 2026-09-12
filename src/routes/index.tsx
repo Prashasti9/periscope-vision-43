@@ -1663,7 +1663,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const getCandidateScoresFn = useServerFn(getCandidateScores);
   // Identity keys already handed to the auto-score queue — a ref so
   // re-renders never double-fire the same expensive call.
-  const queuedRef = useRef<Set<string>>(new Set());
+  
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
@@ -1860,59 +1860,11 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
         setActivated((m) => ({ ...seedActivated, ...m }));
       if (Object.keys(seedDrafts).length > 0)
         setDrafts((m) => ({ ...seedDrafts, ...m }));
-      // Auto-score every candidate that still has no score, through a
-      // queue limited to 3 concurrent calls. Keys already queued live in
-      // a ref so re-renders never double-fire a call.
-      const pending = rows.filter(
-        (r) => !seeded[r.identity_key] && !queuedRef.current.has(r.identity_key),
-      );
-      for (const r of pending) queuedRef.current.add(r.identity_key);
-
-      const scoreOne = async (c: PeopleCandidate) => {
-        // Cheap pre-screen gate before the expensive call.
-        const text = [
-          `handle: @${c.person_or_handle}`,
-          `sources: ${c.sources}`,
-          c.companies ? `companies/repos: ${c.companies}` : "",
-          `signal_count: ${c.signal_count}`,
-        ]
-          .filter(Boolean)
-          .join("\n");
-        try {
-          const s2 = await screenFn({ data: { text, thesis: thesisToText(thesis) } });
-          setScreened((m) => ({ ...m, [c.identity_key]: s2 }));
-          if (!s2.pass) return; // skip expensive scoring
-        } catch {
-          // Fail open — screener error should not block scoring.
-        }
-        await runScore(c.identity_key).catch(() => {
-          /* runScore already stores { error } — never rethrow */
-        });
-      };
-
-      (async () => {
-        let next = 0;
-        const worker = async () => {
-          while (!cancelled) {
-            const idx = next++;
-            if (idx >= pending.length) return;
-            const c = pending[idx];
-            try {
-              await scoreOne(c);
-            } catch {
-              queuedRef.current.delete(c.identity_key);
-            }
-          }
-        };
-        await Promise.all([worker(), worker(), worker()]);
-      })().catch(() => {
-        /* defensive: no unhandled rejection escapes */
-      });
     })();
     return () => {
       cancelled = true;
     };
-  }, [runScore, screenFn, getCandidatesFn, getCandidateScoresFn, thesis]);
+  }, [getCandidatesFn, getCandidateScoresFn]);
 
   return (
     <div>
