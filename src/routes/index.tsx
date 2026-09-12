@@ -1829,7 +1829,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
       const seeded: Record<string, CandidateScore> = {};
       let persistedKeys = new Set<string>();
       try {
-        const persisted = (await getCandidateScoresFn()) as Array<{
+        const persisted = (await getCandidateScoresFn()) as unknown as Array<{
           identity_key: string;
           score: CandidateScore;
         }>;
