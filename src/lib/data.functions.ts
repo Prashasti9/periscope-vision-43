@@ -26,6 +26,17 @@ export const getPeopleCandidates = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+export const getCandidateScores = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("candidate_scores")
+      .select("identity_key, score, scored_at");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  },
+);
+
 export const getSignals = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => {
     const v = (input ?? {}) as { source?: string; limit?: number };
