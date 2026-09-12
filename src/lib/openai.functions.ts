@@ -205,8 +205,8 @@ export const scoreCandidate = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<CandidateScore> => {
     // Enrich first: adds GitHub profile + Tavily web evidence so market /
     // idea_vs_market axes have real facts to cite, not general knowledge.
-    const { enrichCandidate } = await import("./enrich.functions");
-    const enriched = await enrichCandidate({ data: { identityKey: data.identityKey } });
+    const { runEnrichCandidate } = await import("./enrich.server");
+    const enriched = await runEnrichCandidate(data.identityKey);
 
     const system =
       "You are an evidence-first VC scorer. Score three independent axes for a candidate, " +
@@ -426,8 +426,8 @@ export const classifyCandidate = createServerFn({ method: "POST" })
     // Reuse the same enrichment path scoreCandidate uses.
     let payload: unknown;
     try {
-      const { enrichCandidate } = await import("./enrich.functions");
-      const enriched = await enrichCandidate({ data: { identityKey: data.identityKey } });
+      const { runEnrichCandidate } = await import("./enrich.server");
+      const enriched = await runEnrichCandidate(data.identityKey);
       payload = {
         candidate: {
           person_or_handle: enriched.person_or_handle,
@@ -528,8 +528,8 @@ export const scoreFounder = createServerFn({ method: "POST" })
     return { founderId: v.founderId };
   })
   .handler(async ({ data }): Promise<CandidateScore> => {
-    const { enrichFounder } = await import("./enrich.functions");
-    const enriched = await enrichFounder({ data: { founderId: data.founderId } });
+    const { runEnrichFounder } = await import("./enrich.server");
+    const enriched = await runEnrichFounder(data.founderId);
 
     const system =
       "You are an evidence-first VC scorer. Score three independent axes for an inbound founder application, " +
