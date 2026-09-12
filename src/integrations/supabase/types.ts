@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      candidate_scores: {
+        Row: {
+          identity_key: string
+          score: Json
+          scored_at: string
+        }
+        Insert: {
+          identity_key: string
+          score: Json
+          scored_at?: string
+        }
+        Update: {
+          identity_key?: string
+          score?: Json
+          scored_at?: string
+        }
+        Relationships: []
+      }
       founders: {
         Row: {
           accelerator: string | null
