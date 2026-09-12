@@ -1663,7 +1663,7 @@ function LivePipelineView({ thesis }: { thesis: typeof DEFAULT_THESIS }) {
   const getCandidateScoresFn = useServerFn(getCandidateScores);
   // Identity keys already handed to the auto-score queue — a ref so
   // re-renders never double-fire the same expensive call.
-  const queuedRef = useRef<Set<string>>(new Set());
+  
   const [candidates, setCandidates] = useState<PeopleCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string>("");
